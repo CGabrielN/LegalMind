@@ -1,0 +1,25 @@
+# Core dependencies
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+transformers>=4.30.0
+datasets>=2.15.0
+chromadb>=0.4.0
+streamlit>=1.30.0
+scikit-learn>=1.0.0
+sentence-transformers>=2.2.2
+numpy<2.0.0  # Specify numpy < 2.0 for compatibility
+
+# LLM and embedding model dependencies
+accelerate>=0.20.0
+bitsandbytes>=0.39.0
+peft>=0.4.0
+einops>=0.6.0
+sentencepiece>=0.2.0
+flash-attn>=2.3.0; platform_system != "Windows"
+
+# Processing and utilities
+tiktoken>=0.4.0
+tqdm>=4.66.0
+PyYAML>=6.0
+pandas>=2.0.0

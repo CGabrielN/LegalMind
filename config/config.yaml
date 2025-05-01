@@ -1,0 +1,95 @@
+# LegalMind Configuration
+
+# Dataset settings
+dataset:
+  name: "isaacus/open-australian-legal-qa"
+  alternative: "ibunescu/qa_legal_dataset_train"
+  local_path: "data/raw/"
+
+# Chunking settings
+chunking:
+  strategies:
+    case_document:
+      enabled: true
+      description: "Top-level chunking by case document"
+    legal_sections:
+      enabled: true
+      description: "Mid-level chunking by legal reasoning sections (facts, arguments, holding)"
+    paragraphs:
+      enabled: true
+      description: "Paragraph-level chunking for specific legal points"
+
+  chunk_sizes:
+    case_holdings:
+      min_tokens: 300
+      max_tokens: 500
+    factual_backgrounds:
+      min_tokens: 400
+      max_tokens: 600
+    legal_reasoning:
+      min_tokens: 500
+      max_tokens: 700
+
+# Metadata settings
+metadata:
+  fields:
+    - jurisdiction
+    - document_type
+    - citation
+    - url
+    - date
+    - court
+
+# Embedding settings
+embedding:
+  model_name: "BAAI/bge-large-en-v1.5"
+#  device: "cuda"  # or "cpu" if GPU not available
+  device: "cpu"
+  batch_size: 32
+  max_length: 512
+
+# Vector database settings
+vectordb:
+  name: "chroma"
+  persist_directory: "data/chroma_db"
+  collection_name: "legal_documents"
+
+# LLM settings
+llm:
+  model_name: "microsoft/phi-2"  # Fallback model if LM Studio is not available
+  device: "cpu"  # or "cuda" if GPU available
+  temperature: 0.1
+  max_new_tokens: 1024
+  use_flash_attention: false
+
+# LM Studio API settings
+lm_studio:
+  api_base_url: "http://127.0.0.1:1234/v1"
+  model_id: "phi-4-mini-instruct"  # This is just for display, LM Studio uses whatever model is loaded
+
+# RAG settings
+rag:
+  basic:
+    enabled: true
+    top_k: 5
+  query_expansion:
+    enabled: false  # Will be enabled in Week 9-10
+  multi_query:
+    enabled: false  # Will be enabled in Week 9-10
+  metadata_enhanced:
+    enabled: false  # Will be enabled in Week 9-10
+
+# UI settings
+ui:
+  type: "streamlit"  # or "gradio"
+  title: "LegalMind Assistant"
+  description: "Your AI assistant for legal information and reasoning"
+  theme: "light"
+
+# Evaluation settings
+evaluation:
+  metrics:
+    - relevance
+    - correctness
+    - citation_accuracy
+  test_set_size: 100
