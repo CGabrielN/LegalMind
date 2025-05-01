@@ -29,6 +29,9 @@ def setup_environment():
     os.makedirs(project_root / "data" / "raw", exist_ok=True)
     os.makedirs(project_root / "data" / "processed", exist_ok=True)
     os.makedirs(project_root / "data" / "chroma_db", exist_ok=True)
+    os.makedirs(project_root / "data" / "feedback", exist_ok=True)
+    os.makedirs(project_root / "data" / "precedents", exist_ok=True)
+    os.makedirs(project_root / "models", exist_ok=True)
     os.makedirs(project_root / "evaluation", exist_ok=True)
 
     logger.info("Environment setup complete")
@@ -83,6 +86,74 @@ def run_ui():
         logger.error("Streamlit not found. Please install it with 'pip install streamlit'")
         sys.exit(1)
 
+def initialize_rlhf():
+    """Initialize the RLHF system with initial preference data."""
+    logger.info("Initializing RLHF system")
+
+    try:
+        from src.models.hallucination_pipeline import LegalResponsePipeline
+
+        # Initialize the pipeline
+        pipeline = LegalResponsePipeline()
+        pipeline.initialize_pipeline(seed_preferences=True)
+
+        logger.info("RLHF system initialized successfully")
+    except Exception as e:
+        logger.error(f"RLHF initialization failed: {str(e)}")
+        sys.exit(1)
+
+def initialize_citation_database():
+    """Initialize the citation database with Australian precedents."""
+    logger.info("Initializing citation database")
+
+    try:
+        from src.models.citation_handler import CitationCrossReferencer, initialize_australian_precedents
+
+        # Initialize with pre-defined precedents
+        precedents = initialize_australian_precedents()
+
+        # Create cross-referencer and save precedents
+        cross_referencer = CitationCrossReferencer()
+        cross_referencer.precedents = precedents
+        cross_referencer.save_precedents()
+
+        logger.info("Citation database initialized successfully")
+    except Exception as e:
+        logger.error(f"Citation database initialization failed: {str(e)}")
+        sys.exit(1)
+
+def run_hallucination_tests():
+    """Run hallucination detection and mitigation tests."""
+    logger.info("Running hallucination mitigation tests")
+
+    try:
+        import unittest
+        from tests.test_hallucination_mitigation import (
+            TestHallucinationDetector,
+            TestHallucinationMitigation,
+            TestCitationVerification
+        )
+
+        # Create test suite
+        suite = unittest.TestSuite()
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(TestHallucinationDetector))
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(TestHallucinationMitigation))
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(TestCitationVerification))
+
+        # Run tests
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+
+        if result.wasSuccessful():
+            logger.info("Hallucination mitigation tests completed successfully")
+        else:
+            logger.error("Hallucination mitigation tests failed")
+            sys.exit(1)
+
+    except Exception as e:
+        logger.error(f"Hallucination tests failed: {str(e)}")
+        sys.exit(1)
+
 def run_full_pipeline():
     """Run the full LegalMind pipeline."""
     logger.info("Starting full LegalMind pipeline")
@@ -93,11 +164,38 @@ def run_full_pipeline():
     # Step 2: Process data
     process_data()
 
-    # Step 3: Run evaluation
+    # Step 3: Initialize RLHF system
+    initialize_rlhf()
+
+    # Step 4: Initialize citation database
+    initialize_citation_database()
+
+    # Step 5: Run hallucination tests
+    run_hallucination_tests()
+
+    # Step 6: Run evaluation
     run_evaluation()
 
-    # Step 4: Start UI
+    # Step 7: Start UI
     run_ui()
+
+def run_weekly_training():
+    """Run weekly RLHF training from collected feedback."""
+    logger.info("Running weekly RLHF training")
+
+    try:
+        from src.models.hallucination_pipeline import LegalResponsePipeline
+
+        # Initialize pipeline
+        pipeline = LegalResponsePipeline()
+
+        # Train from feedback
+        pipeline.train_from_feedback()
+
+        logger.info("Weekly RLHF training completed successfully")
+    except Exception as e:
+        logger.error(f"Weekly RLHF training failed: {str(e)}")
+        sys.exit(1)
 
 def main():
     """Main entry point with command-line argument parsing."""
@@ -109,6 +207,11 @@ def main():
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation")
     parser.add_argument("--ui", action="store_true", help="Start the user interface")
     parser.add_argument("--all", action="store_true", help="Run the full pipeline")
+    parser.add_argument("--init-rlhf", action="store_true", help="Initialize RLHF system")
+    parser.add_argument("--init-citations", action="store_true", help="Initialize citation database")
+    parser.add_argument("--test-hallucination", action="store_true", help="Run hallucination tests")
+    parser.add_argument("--train-rlhf", action="store_true", help="Run weekly RLHF training")
+    parser.add_argument("--version", action="store_true", help="Display LegalMind version info")
 
     args = parser.parse_args()
 
@@ -125,14 +228,40 @@ def main():
         if args.process:
             process_data()
 
+        if args.init_rlhf:
+            initialize_rlhf()
+
+        if args.init_citations:
+            initialize_citation_database()
+
+        if args.test_hallucination:
+            run_hallucination_tests()
+
         if args.evaluate:
             run_evaluation()
 
         if args.ui:
             run_ui()
 
+        if args.train_rlhf:
+            run_weekly_training()
+
+        if args.version:
+            try:
+                from src.models.hallucination_pipeline import LegalResponsePipeline
+                pipeline = LegalResponsePipeline()
+                version_info = pipeline.get_version_info()
+                print("\nLegalMind System Version Information:")
+                for key, value in version_info.items():
+                    print(f"  {key}: {value}")
+                print("\n")
+            except Exception as e:
+                logger.error(f"Error displaying version info: {str(e)}")
+
         # If no operation specified, show help
-        if not (args.download or args.process or args.evaluate or args.ui):
+        if not any([args.download, args.process, args.evaluate, args.ui,
+                    args.init_rlhf, args.init_citations, args.test_hallucination,
+                    args.train_rlhf, args.version]):
             parser.print_help()
             sys.exit(0)
 

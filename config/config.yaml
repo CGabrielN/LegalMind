@@ -43,7 +43,7 @@ metadata:
 # Embedding settings
 embedding:
   model_name: "BAAI/bge-large-en-v1.5"
-#  device: "cuda"  # or "cpu" if GPU not available
+  #  device: "cuda"  # or "cpu" if GPU not available
   device: "cpu"
   batch_size: 32
   max_length: 512
@@ -73,11 +73,79 @@ rag:
     enabled: true
     top_k: 5
   query_expansion:
-    enabled: false  # Will be enabled in Week 9-10
+    enabled: true  # Now enabled in Week 9-10
+    top_k: 5
+    expansion_strategies:
+      synonyms: true
+      legal_terms: true
+      jurisdiction_specific: true
   multi_query:
-    enabled: false  # Will be enabled in Week 9-10
+    enabled: true  # Now enabled in Week 9-10
+    top_k: 6
+    max_perspectives: 3
+    strategies:
+      plaintiff_perspective: true
+      defendant_perspective: true
+      jurisdictional_perspective: true
+      statutory_perspective: true
+      case_law_perspective: true
   metadata_enhanced:
-    enabled: false  # Will be enabled in Week 9-10
+    enabled: true  # Now enabled in Week 9-10
+    top_k: 7
+    weights:
+      similarity: 0.6
+      court_hierarchy: 0.2
+      recency: 0.2
+    strategies:
+      jurisdiction_filtering: true
+      court_hierarchy_weighting: true
+      recency_analysis: true
+      citation_network: true
+  advanced:
+    enabled: true
+    top_k: 8
+    strategy_selection: "auto"  # Can be "auto", "fixed", or "hybrid"
+
+# RLHF settings
+rlhf:
+  enabled: true
+  reward_model:
+    model_name: "distilbert-base-uncased"
+    training_epochs: 3
+    learning_rate: 2e-5
+    batch_size: 8
+  feedback:
+    feedback_path: "data/feedback"
+    min_preference_pairs: 50
+  confidence_threshold: 0.7
+
+# Citation handling settings
+citation:
+  precedent_db_path: "data/precedents/australian_citations.json"
+  verification:
+    enabled: true
+    min_confidence: 0.6
+  formatting:
+    enabled: true
+    add_links: true
+  suggestion:
+    enabled: true
+    relevance_threshold: 0.3
+
+# Hallucination mitigation settings
+hallucination:
+  enabled: true
+  detection:
+    check_citations: true
+    check_claims: true
+    confidence_threshold: 0.7
+  mitigation:
+    add_disclaimers: true
+    replace_citations: true
+    modify_claims: true
+  crosscheck:
+    enabled: true
+    australian_precedents: true
 
 # UI settings
 ui:
@@ -85,6 +153,12 @@ ui:
   title: "LegalMind Assistant"
   description: "Your AI assistant for legal information and reasoning"
   theme: "light"
+  features:
+    confidence_display: true
+    citation_validation: true
+    hallucination_warning: true
+    rag_strategy_display: true
+    advanced_rag_options: true
 
 # Evaluation settings
 evaluation:
@@ -92,4 +166,5 @@ evaluation:
     - relevance
     - correctness
     - citation_accuracy
+    - hallucination_rate
   test_set_size: 100
