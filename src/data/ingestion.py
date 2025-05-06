@@ -5,11 +5,12 @@ This module handles data loading and processing from Hugging Face datasets
 for Australian legal documents.
 """
 
-import os
-import yaml
-import logging
 import json
+import logging
+import os
 from typing import Dict, List, Any, Optional
+
+import yaml
 from datasets import load_dataset, Dataset
 from tqdm import tqdm
 
@@ -22,25 +23,6 @@ logger = logging.getLogger(__name__)
 # Load configuration
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
-
-
-def process_documents(documents: List[Dict[str, Any]]) -> List[Chunk]:
-    """Process documents into chunks using legal chunking strategy."""
-    logger.info("Processing documents into chunks")
-
-    all_chunks = []
-
-    for doc in tqdm(documents, desc="Chunking documents"):
-        # Process each document using our specialized legal chunking
-        try:
-            chunks = process_legal_document(doc["text"], doc["metadata"])
-            all_chunks.extend(chunks)
-        except Exception as e:
-            logger.error(f"Error processing document: {str(e)}")
-            continue
-
-    logger.info(f"Created {len(all_chunks)} chunks from {len(documents)} documents")
-    return all_chunks
 
 
 class LegalDataIngestion:
@@ -71,7 +53,8 @@ class LegalDataIngestion:
                 logger.info(f"Trying alternative dataset: {alternative}")
                 try:
                     dataset = load_dataset(alternative)
-                    logger.info(f"Successfully loaded alternative dataset with {len(dataset['train'])} training examples")
+                    logger.info(
+                        f"Successfully loaded alternative dataset with {len(dataset['train'])} training examples")
                     self.dataset_name = alternative
                     return dataset
                 except Exception as e2:
@@ -177,8 +160,8 @@ class LegalDataIngestion:
         logger.info(f"Extracted {len(documents)} legal documents")
         return documents
 
-
-    def process_documents(self, documents: List[Dict[str, Any]]) -> List[Chunk]:
+    @staticmethod
+    def process_documents(documents: List[Dict[str, Any]]) -> List[Chunk]:
         """Process documents into chunks using legal chunking strategy."""
         logger.info("Processing documents into chunks")
 
@@ -233,13 +216,14 @@ class LegalDataIngestion:
         documents = self.extract_legal_documents(dataset)
 
         # Step 3: Process documents into chunks
-        chunks = process_documents(documents)
+        chunks = self.process_documents(documents)
 
         # Step 4: Save processed data
         self.save_processed_data(chunks)
 
         logger.info("Completed ingestion pipeline")
         return chunks
+
 
 if __name__ == "__main__":
     # Run ingestion directly if script is executed

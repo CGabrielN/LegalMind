@@ -6,11 +6,12 @@ This script processes the downloaded datasets, applies chunking strategies,
 and stores the processed data in the vector database.
 """
 
+import logging
 import os
 import sys
-import yaml
-import logging
 from pathlib import Path
+
+import yaml
 
 # Add project root to path to import project modules
 project_root = Path(__file__).parent.parent
@@ -23,6 +24,7 @@ from src.vectordb.chroma_db import ChromaVectorStore
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 def main():
     """
@@ -117,6 +119,7 @@ def main():
         return
 
     logger.info("Data processing pipeline complete")
+
 
 if __name__ == "__main__":
     main()

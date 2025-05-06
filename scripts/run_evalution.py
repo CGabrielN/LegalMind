@@ -6,21 +6,21 @@ This script runs evaluation on the LegalMind system using a set of test queries
 and produces performance metrics.
 """
 
-import os
-import sys
-import yaml
 import json
 import logging
-import pandas as pd
+import os
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+
+import pandas as pd
+import yaml
 
 # Add project root to path to import project modules
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.retrieval.basic_rag import BasicRAG
-from src.models.llm import LegalLLM
+from src.models.llm_api import LMStudioAPI  # Changed to use LM Studio API instead of direct LLM
 from src.evaluation.metrics import LegalMindEvaluator
 
 # Configure logging
@@ -40,6 +40,7 @@ TEST_QUERIES = [
     "What are the key principles of family law in Australia?",
     "Explain the legal process for property settlements in divorce cases."
 ]
+
 
 def main():
     """
@@ -63,7 +64,18 @@ def main():
     # Initialize components
     logger.info("Initializing evaluation components")
     rag = BasicRAG()
-    llm = LegalLLM()
+
+    # Initialize LM Studio API
+    try:
+        # Get LM Studio API URL from config or use default
+        lm_studio_url = config.get("lm_studio", {}).get("api_base_url", "http://127.0.0.1:1234/v1")
+        llm = LMStudioAPI(api_base_url=lm_studio_url)
+        logger.info(f"Successfully connected to LM Studio API at {lm_studio_url}")
+    except Exception as e:
+        logger.error(f"Error connecting to LM Studio API: {str(e)}")
+        logger.error("Make sure LM Studio is running with a model loaded.")
+        return
+
     evaluator = LegalMindEvaluator()
 
     # Results storage
@@ -72,7 +84,7 @@ def main():
     # Process test queries
     logger.info(f"Processing {len(TEST_QUERIES)} test queries")
     for i, query in enumerate(TEST_QUERIES):
-        logger.info(f"Evaluating query {i+1}/{len(TEST_QUERIES)}: {query[:50]}...")
+        logger.info(f"Evaluating query {i + 1}/{len(TEST_QUERIES)}: {query[:50]}...")
 
         try:
             # Retrieve documents
@@ -104,13 +116,13 @@ def main():
             all_results.append(result)
 
             # Save individual result
-            with open(eval_dir / f"query_{i+1}_results.json", "w") as f:
+            with open(eval_dir / f"query_{i + 1}_results.json", "w") as f:
                 json.dump(result, f, indent=2)
 
-            logger.info(f"Completed evaluation for query {i+1} with score: {eval_results['overall_score']:.4f}")
+            logger.info(f"Completed evaluation for query {i + 1} with score: {eval_results['overall_score']:.4f}")
 
         except Exception as e:
-            logger.error(f"Error evaluating query {i+1}: {str(e)}")
+            logger.error(f"Error evaluating query {i + 1}: {str(e)}")
 
     # Calculate aggregate metrics
     if all_results:
@@ -141,6 +153,7 @@ def main():
         logger.info(f"Results saved to {eval_dir}")
     else:
         logger.error("No evaluation results were generated")
+
 
 if __name__ == "__main__":
     main()

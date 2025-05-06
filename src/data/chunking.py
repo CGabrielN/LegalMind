@@ -7,12 +7,13 @@ citations, and structures documents in a way that maintains their
 interpretability.
 """
 
-import re
-import yaml
 import logging
-import tiktoken
-from typing import List, Dict, Any, Tuple, Optional
+import re
 from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
+
+import tiktoken
+import yaml
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,6 +26,7 @@ with open("config/config.yaml", "r") as f:
 # Get chunking configuration
 CHUNK_SIZES = config["chunking"]["chunk_sizes"]
 
+
 @dataclass
 class Chunk:
     """Represents a chunk of a legal document with metadata."""
@@ -32,10 +34,12 @@ class Chunk:
     metadata: Dict[str, Any]
     tokens: int
 
+
 def count_tokens(text: str) -> int:
     """Count the number of tokens in a text using tiktoken."""
     encoder = tiktoken.get_encoding("cl100k_base")  # OpenAI's encoding, widely compatible
     return len(encoder.encode(text))
+
 
 def extract_citation(text: str) -> Optional[str]:
     """Extract Australian legal citation from text."""
@@ -45,6 +49,7 @@ def extract_citation(text: str) -> Optional[str]:
     if match:
         return match.group(1)
     return None
+
 
 def identify_document_type(text: str) -> str:
     """Identify the type of legal document."""
@@ -56,6 +61,7 @@ def identify_document_type(text: str) -> str:
         return "Appeal"
     else:
         return "Other"
+
 
 def identify_jurisdiction(text: str) -> Optional[str]:
     """Identify the Australian jurisdiction from text."""
@@ -88,6 +94,7 @@ def identify_jurisdiction(text: str) -> Optional[str]:
 
     return None
 
+
 def extract_section_type(text: str) -> str:
     """Identify the type of legal section (facts, arguments, holding)."""
     text_lower = text.lower()
@@ -107,6 +114,7 @@ def extract_section_type(text: str) -> str:
     # Default to legal_reasoning if unclear
     return "legal_reasoning"
 
+
 def chunk_document_by_case(document: str, metadata: Dict[str, Any]) -> List[Chunk]:
     """Top-level chunking by case document."""
     # For full case documents, we keep them together to preserve full context
@@ -115,6 +123,7 @@ def chunk_document_by_case(document: str, metadata: Dict[str, Any]) -> List[Chun
         metadata=metadata,
         tokens=count_tokens(document)
     )]
+
 
 def chunk_document_by_sections(document: str, metadata: Dict[str, Any]) -> List[Chunk]:
     """Mid-level chunking by legal reasoning sections."""
@@ -180,6 +189,7 @@ def chunk_document_by_sections(document: str, metadata: Dict[str, Any]) -> List[
                 ))
 
     return chunks
+
 
 def chunk_by_paragraphs(text: str, metadata: Dict[str, Any], min_tokens: int, max_tokens: int) -> List[Chunk]:
     """Paragraph-level chunking for specific legal points."""
@@ -287,6 +297,7 @@ def chunk_by_paragraphs(text: str, metadata: Dict[str, Any], min_tokens: int, ma
 
     return chunks
 
+
 def process_legal_document(document: str, metadata: Dict[str, Any] = None) -> List[Chunk]:
     """Process a legal document using the appropriate chunking strategy."""
     if metadata is None:
@@ -321,7 +332,8 @@ def process_legal_document(document: str, metadata: Dict[str, Any] = None) -> Li
         section_chunks = chunk_document_by_sections(document, metadata)
 
         # If sections are appropriately sized, use section-level chunking
-        if all(chunk.tokens <= CHUNK_SIZES.get("legal_reasoning", {}).get("max_tokens", 700) for chunk in section_chunks):
+        if all(chunk.tokens <= CHUNK_SIZES.get("legal_reasoning", {}).get("max_tokens", 700) for chunk in
+               section_chunks):
             return section_chunks
 
     # If we need more granular chunking, use paragraph-level

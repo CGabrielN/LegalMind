@@ -6,13 +6,13 @@ with support for all advanced features including RAG strategies,
 hallucination mitigation, and RLHF.
 """
 
-import os
-import yaml
 import logging
 import sys
-import streamlit as st
 from pathlib import Path
 from typing import List, Dict, Any
+
+import streamlit as st
+import yaml
 
 # Add project root to path to import project modules
 project_root = Path(__file__).parent.parent.parent
@@ -45,6 +45,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 class LegalMindUI:
     """
@@ -347,7 +348,9 @@ class LegalMindUI:
                     else:
                         confidence_color = "red"
 
-                    st.markdown(f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>",
+                        unsafe_allow_html=True)
 
     def _display_retrieved_docs(self, documents: List[Dict[str, Any]]):
         """Display the retrieved documents."""
@@ -356,7 +359,7 @@ class LegalMindUI:
 
         with st.expander("View Retrieved Legal Documents", expanded=False):
             for i, doc in enumerate(documents):
-                st.markdown(f"### Document {i+1}")
+                st.markdown(f"### Document {i + 1}")
                 st.markdown(self._format_document_preview(doc))
                 st.markdown("---")
 
@@ -383,10 +386,11 @@ class LegalMindUI:
                         confidence = result.get("context_confidence", 0)
 
                         status = "✅ Verified" if verified else "❌ Not Verified"
-                        st.markdown(f"**Citation {i+1}**: {citation}  \n{status} (Confidence: {int(confidence*100)}%)")
+                        st.markdown(
+                            f"**Citation {i + 1}**: {citation}  \n{status} (Confidence: {int(confidence * 100)}%)")
 
                 verification_rate = citation_analysis.get("verification_rate", 1.0)
-                st.markdown(f"**Citation Verification Rate**: {int(verification_rate*100)}%")
+                st.markdown(f"**Citation Verification Rate**: {int(verification_rate * 100)}%")
 
             # Hallucination analysis
             hallucination_analysis = analysis.get("hallucination_analysis", {})
@@ -403,7 +407,8 @@ class LegalMindUI:
                 jurisdiction_analysis = hallucination_analysis.get("jurisdiction_analysis", {})
                 if not jurisdiction_analysis.get("jurisdiction_match", True):
                     mismatched = jurisdiction_analysis.get("mismatched_jurisdictions", [])
-                    st.markdown(f"⚠️ **Jurisdiction Mismatch**: Response discusses jurisdictions not supported by context: {', '.join(mismatched)}")
+                    st.markdown(
+                        f"⚠️ **Jurisdiction Mismatch**: Response discusses jurisdictions not supported by context: {', '.join(mismatched)}")
 
     def _display_rag_explanation(self, explanation):
         """Display the RAG strategy explanation if available."""
@@ -421,7 +426,7 @@ class LegalMindUI:
                 if expanded_queries:
                     st.markdown("**Expanded Queries:**")
                     for i, query in enumerate(expanded_queries):
-                        st.markdown(f"{i+1}. {query}")
+                        st.markdown(f"{i + 1}. {query}")
 
                 legal_terms = explanation["query_expansion"].get("legal_terms", [])
                 if legal_terms:
@@ -434,7 +439,7 @@ class LegalMindUI:
                 if perspectives:
                     st.markdown("**Query Perspectives:**")
                     for i, perspective in enumerate(perspectives):
-                        st.markdown(f"{i+1}. {perspective}")
+                        st.markdown(f"{i + 1}. {perspective}")
 
             elif "metadata_enhanced" in explanation:
                 st.markdown("### Metadata Enhancement")

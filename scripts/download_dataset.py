@@ -6,11 +6,12 @@ This script downloads the required datasets from Hugging Face
 and saves them locally.
 """
 
+import logging
 import os
 import sys
-import yaml
-import logging
 from pathlib import Path
+
+import yaml
 
 # Add project root to path to import project modules
 project_root = Path(__file__).parent.parent
@@ -21,6 +22,7 @@ from src.data.ingestion import LegalDataIngestion
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 def main():
     """
@@ -89,6 +91,7 @@ def main():
             return
 
     logger.info("Dataset download complete")
+
 
 if __name__ == "__main__":
     main()

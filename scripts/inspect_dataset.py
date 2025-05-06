@@ -6,13 +6,11 @@ This script helps debug dataset loading by showing the structure and contents
 of the datasets.
 """
 
-import os
-import sys
-import yaml
-import json
 import logging
+import sys
 from pathlib import Path
-from pprint import pprint
+
+import yaml
 from datasets import load_dataset
 
 # Add project root to path to import project modules
@@ -22,6 +20,7 @@ sys.path.append(str(project_root))
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 def inspect_dataset(dataset_name: str, num_samples: int = 3):
     """
@@ -58,7 +57,7 @@ def inspect_dataset(dataset_name: str, num_samples: int = 3):
             logger.info(f"\nSample examples (showing {min(num_samples, size)}):")
             for i in range(min(num_samples, size)):
                 example = split_data[i]
-                print(f"\nExample {i+1}:")
+                print(f"\nExample {i + 1}:")
 
                 # Print each field
                 for feature in features:
@@ -78,10 +77,11 @@ def inspect_dataset(dataset_name: str, num_samples: int = 3):
             if empty_fields:
                 logger.info("\nEmpty field counts:")
                 for field, count in empty_fields.items():
-                    logger.info(f"  {field}: {count} empty values ({count/size*100:.1f}%)")
+                    logger.info(f"  {field}: {count} empty values ({count / size * 100:.1f}%)")
 
     except Exception as e:
         logger.error(f"Error inspecting dataset: {str(e)}")
+
 
 def main():
     """Main function to inspect datasets."""
@@ -106,6 +106,7 @@ def main():
     if alternative_dataset:
         logger.info(f"\nInspecting alternative dataset: {alternative_dataset}")
         inspect_dataset(alternative_dataset)
+
 
 if __name__ == "__main__":
     main()

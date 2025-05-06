@@ -6,13 +6,14 @@ legal texts, providing extraction, validation, and cross-referencing against
 Australian precedents.
 """
 
-import re
-import yaml
 import json
 import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Set, Tuple
+import re
 from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Tuple
+
+import yaml
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Load configuration
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
+
 
 @dataclass
 class Citation:
@@ -36,6 +38,7 @@ class Citation:
     citation_type: str = "case"  # case, statute, article
     valid: bool = True
     confidence: float = 1.0
+
 
 class AustralianCitationExtractor:
     """
@@ -190,6 +193,7 @@ class AustralianCitationExtractor:
         logger.info(f"Extracted {len(all_citations)} total citations")
 
         return all_citations
+
 
 class CitationCrossReferencer:
     """
@@ -430,6 +434,7 @@ class CitationCrossReferencer:
 
         logger.info(f"Added {len(citations)} precedents from text")
 
+
 class CitationFormatting:
     """
     Formats and styles legal citations for consistency.
@@ -491,12 +496,14 @@ class CitationFormatting:
                 for c in citations:
                     if c.full_citation == citation:
                         formatted_citation = self.format_citation(c)
-                        formatted_text = formatted_text[:pos] + formatted_citation + formatted_text[pos+len(citation):]
+                        formatted_text = formatted_text[:pos] + formatted_citation + formatted_text[
+                                                                                     pos + len(citation):]
                         break
 
         return formatted_text
 
-    def get_jurisdiction_abbreviations(self) -> Dict[str, str]:
+    @staticmethod
+    def get_jurisdiction_abbreviations() -> Dict[str, str]:
         """Get mapping of jurisdiction abbreviations to full names."""
         return {
             "Cth": "Commonwealth",
@@ -537,7 +544,7 @@ class CitationFormatting:
                     if c.full_citation == citation:
                         link_url = self._generate_citation_link(c)
                         linked_citation = f'<a href="{link_url}" title="{c.full_citation}" class="legal-citation">{c.full_citation}</a>'
-                        linked_text = linked_text[:pos] + linked_citation + linked_text[pos+len(citation):]
+                        linked_text = linked_text[:pos] + linked_citation + linked_text[pos + len(citation):]
                         break
 
         return linked_text
@@ -576,6 +583,7 @@ class CitationFormatting:
         }
 
         return mapping.get(jurisdiction, "cth").lower()
+
 
 class CitationVerification:
     """
@@ -744,7 +752,8 @@ class CitationVerification:
 
         return suggestions
 
-    def _extract_legal_topics(self, text: str) -> List[str]:
+    @staticmethod
+    def _extract_legal_topics(text: str) -> List[str]:
         """Extract legal topics from text."""
         # This is a simplified implementation
         # In a real system, this would use more sophisticated NLP
@@ -768,7 +777,8 @@ class CitationVerification:
 
         return found_topics
 
-    def _extract_context_around_citation(self, citation: str, context: str, window: int = 200) -> str:
+    @staticmethod
+    def _extract_context_around_citation(citation: str, context: str, window: int = 200) -> str:
         """Extract text around a citation."""
         position = context.find(citation)
         if position == -1:
@@ -778,6 +788,7 @@ class CitationVerification:
         end = min(len(context), position + len(citation) + window)
 
         return context[start:end]
+
 
 def initialize_australian_precedents():
     """

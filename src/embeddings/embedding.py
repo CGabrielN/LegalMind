@@ -1,16 +1,17 @@
 """
-LegalMind Embedding Module
+LegalMind Embedding Module using LM Studio API
 
-This module handles the embedding of legal texts using the specified model.
+This module handles the embedding of legal texts using LM Studio's API
+instead of loading the model locally.
 """
 
-import os
-import yaml
-import torch
+import json
 import logging
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
+
+import requests
+import yaml
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -20,53 +21,43 @@ logger = logging.getLogger(__name__)
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
+
 class EmbeddingModel:
-    """Handles the embedding of legal texts using the BGE model."""
+    """Handles the embedding of legal texts using LM Studio API."""
 
     def __init__(self):
         """Initialize the embedding model from config."""
         self.model_name = config["embedding"]["model_name"]
-        self.device = config["embedding"]["device"]
         self.batch_size = config["embedding"]["batch_size"]
         self.max_length = config["embedding"]["max_length"]
 
-        # Check if CUDA is available when device is set to cuda
-        if self.device == "cuda" and not torch.cuda.is_available():
-            logger.warning("CUDA not available, falling back to CPU")
-            self.device = "cpu"
+        # Get LM Studio API URL from config or use default
+        self.api_base_url = config.get("lm_studio", {}).get("api_base_url", "http://127.0.0.1:1234/v1")
+        self.embeddings_url = f"{self.api_base_url}/embeddings"
 
-        logger.info(f"Loading embedding model: {self.model_name}")
-        self._load_model()
+        # Test connection to LM Studio API
+        self._test_connection()
 
-    def _load_model(self):
-        """Load the tokenizer and model."""
+        logger.info(f"Initialized embedding model via LM Studio API at {self.api_base_url}")
+
+    def _test_connection(self):
+        """Test the connection to the LM Studio API."""
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModel.from_pretrained(self.model_name)
-            self.model.to(self.device)
-
-            # Set model to evaluation mode
-            self.model.eval()
-
-            logger.info(f"Successfully loaded model {self.model_name} on {self.device}")
-        except Exception as e:
-            logger.error(f"Error loading embedding model: {str(e)}")
-            raise
-
-    def _mean_pooling(self, model_output, attention_mask):
-        """Perform mean pooling on token embeddings."""
-        # First element of model_output contains all token embeddings
-        token_embeddings = model_output[0]
-
-        # Expand attention mask to same dimensions as token embeddings
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-
-        # Sum token embeddings and divide by the total number of tokens
-        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            response = requests.get(self.api_base_url)
+            if response.status_code == 404:
+                # This is actually expected - the root endpoint doesn't exist
+                # but tells us the server is running
+                logger.info("LM Studio API is reachable")
+            else:
+                logger.info(f"LM Studio API responded with status {response.status_code}")
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Failed to connect to LM Studio API at {self.api_base_url}")
+            logger.error("Please ensure LM Studio is running and the API is enabled.")
+            raise ConnectionError(f"Failed to connect to LM Studio API at {self.api_base_url}")
 
     def embed_text(self, text: str) -> List[float]:
         """
-        Embed a single text string.
+        Embed a single text string using LM Studio API.
 
         Args:
             text: Text to embed
@@ -74,34 +65,47 @@ class EmbeddingModel:
         Returns:
             Embedding vector as a list of floats
         """
-        # Prepare the text for the model
-        encoded_input = self.tokenizer(
-            text,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
+        # Prepare the API request
+        payload = {
+            "model": self.model_name,
+            "input": text
+        }
 
-        # Move tensors to the correct device
-        encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
+        headers = {
+            "Content-Type": "application/json"
+        }
 
-        # Compute token embeddings with no gradient computation
-        with torch.no_grad():
-            model_output = self.model(**encoded_input)
+        try:
+            # Make the API call
+            response = requests.post(
+                self.embeddings_url,
+                headers=headers,
+                data=json.dumps(payload)
+            )
 
-        # Perform mean pooling
-        embeddings = self._mean_pooling(model_output, encoded_input['attention_mask'])
+            # Check for errors
+            response.raise_for_status()
 
-        # Normalize embeddings
-        embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            # Parse the response
+            result = response.json()
 
-        # Convert to list and return
-        return embeddings[0].cpu().tolist()
+            if "data" in result and len(result["data"]) > 0 and "embedding" in result["data"][0]:
+                embedding = result["data"][0]["embedding"]
+                return embedding
+            else:
+                logger.error(f"Unexpected API response structure: {result}")
+                # Return a zero vector of an appropriate size in case of error
+                # Typical embedding dimensions for BGE models is 1024
+                return [0.0] * 1024
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling LM Studio API for embeddings: {str(e)}")
+            # Return a zero vector in case of error
+            return [0.0] * 1024
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
-        Embed multiple texts in batches.
+        Embed multiple texts in batches using LM Studio API.
 
         Args:
             texts: List of texts to embed
@@ -113,32 +117,13 @@ class EmbeddingModel:
 
         # Process in batches
         for i in tqdm(range(0, len(texts), self.batch_size), desc="Embedding texts"):
-            batch_texts = texts[i:i+self.batch_size]
+            batch_texts = texts[i:i + self.batch_size]
+            batch_embeddings = []
 
-            # Tokenize batch
-            encoded_input = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors='pt'
-            )
+            for text in batch_texts:
+                embedding = self.embed_text(text)
+                batch_embeddings.append(embedding)
 
-            # Move tensors to the correct device
-            encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
-
-            # Compute token embeddings
-            with torch.no_grad():
-                model_output = self.model(**encoded_input)
-
-            # Perform mean pooling
-            embeddings = self._mean_pooling(model_output, encoded_input['attention_mask'])
-
-            # Normalize embeddings
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-
-            # Convert to list and add to results
-            batch_embeddings = embeddings.cpu().tolist()
             all_embeddings.extend(batch_embeddings)
 
         return all_embeddings

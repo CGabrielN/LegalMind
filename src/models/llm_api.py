@@ -5,12 +5,13 @@ This module handles the interaction with LM Studio's local API
 for text generation using retrieved context.
 """
 
-import os
-import yaml
 import json
 import logging
+import os
+from typing import Dict, Any, Optional, Generator
+
 import requests
-from typing import List, Dict, Any, Optional, Generator
+import yaml
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 with open(os.path.join(project_root, "config", "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
+
 
 class LMStudioAPI:
     """
@@ -55,7 +57,8 @@ class LMStudioAPI:
             logger.error("Please ensure LM Studio is running and the API is enabled.")
             raise ConnectionError(f"Failed to connect to LM Studio API at {self.api_base_url}")
 
-    def _create_prompt(self, query: str, context: str) -> Dict[str, Any]:
+    @staticmethod
+    def _create_prompt(query: str, context: str) -> Dict[str, Any]:
         """
         Create a prompt for the LLM based on the query and retrieved context.
 
