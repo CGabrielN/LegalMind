@@ -2,8 +2,8 @@
 LegalMind UI Application
 
 This module implements a Streamlit UI for the LegalMind legal assistant
-with support for all advanced features including RAG strategies,
-hallucination mitigation, and RLHF.
+with support for advanced features including RAG strategies and
+hallucination mitigation.
 """
 
 import os
@@ -45,6 +45,23 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Add custom CSS for better UI elements
+st.markdown("""
+<style>
+    /* Enhance button visibility */
+    .feedback-button {
+        margin: 5px;
+        padding: 5px 10px;
+        border-radius: 5px;
+        background-color: #f0f0f0;
+        display: inline-block;
+    }
+    .feedback-button:hover {
+        background-color: #e0e0e0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 class LegalMindUI:
     """
@@ -105,11 +122,8 @@ class LegalMindUI:
         if "show_confidence" not in st.session_state:
             st.session_state.show_confidence = config["ui"]["features"]["confidence_display"]
 
-        if "alternative_responses" not in st.session_state:
-            st.session_state.alternative_responses = []
-
         if "feedback_submitted" not in st.session_state:
-            st.session_state.feedback_submitted = False
+            st.session_state.feedback_submitted = {}  # Track feedback by message index
 
         if "rag_strategy" not in st.session_state:
             st.session_state.rag_strategy = "advanced"
@@ -120,11 +134,21 @@ class LegalMindUI:
         if "hallucination_mitigation_enabled" not in st.session_state:
             st.session_state.hallucination_mitigation_enabled = config["hallucination"]["enabled"]
 
-        if "generate_alternatives" not in st.session_state:
-            st.session_state.generate_alternatives = False
-
         if "show_rag_explanation" not in st.session_state:
             st.session_state.show_rag_explanation = config["ui"]["features"].get("rag_strategy_display", False)
+
+        if "top_k_value" not in st.session_state:
+            st.session_state.top_k_value = 5
+
+        if "temperature_value" not in st.session_state:
+            st.session_state.temperature_value = 0.1
+
+        # RLHF training status tracking
+        if "last_rlhf_check" not in st.session_state:
+            st.session_state.last_rlhf_check = None
+
+        if "rlhf_training_pending" not in st.session_state:
+            st.session_state.rlhf_training_pending = False
 
         logger.info("Initialized LegalMind UI")
 
@@ -192,7 +216,7 @@ class LegalMindUI:
             list(rag_options.keys()),
             format_func=lambda x: rag_options[x],
             index=list(rag_options.keys()).index(st.session_state.rag_strategy),
-            key="strategy_select"  # Added unique key
+            key="strategy_select"
         )
 
         st.session_state.rag_strategy = selected_strategy
@@ -219,7 +243,7 @@ class LegalMindUI:
                 "Jurisdiction",
                 ["All"] + jurisdictions,
                 index=0,
-                key="jurisdiction_filter"  # Added unique key
+                key="jurisdiction_filter"
             )
 
             if selected_jurisdiction != "All":
@@ -234,7 +258,7 @@ class LegalMindUI:
                 "Document Type",
                 ["All"] + doc_types,
                 index=0,
-                key="doc_type_filter"  # Added unique key
+                key="doc_type_filter"
             )
 
             if selected_doc_type != "All":
@@ -250,7 +274,7 @@ class LegalMindUI:
             min_value=1900,
             max_value=2024,
             value=(1900, 2024),
-            key="year_range_slider"  # Added unique key
+            key="year_range_slider"
         )
 
         if year_range != (1900, 2024):
@@ -269,8 +293,8 @@ class LegalMindUI:
             "Number of Documents to Retrieve",
             min_value=1,
             max_value=20,
-            value=5,
-            key="top_k_slider"  # Added unique key
+            value=st.session_state.top_k_value,
+            key="top_k_slider"
         )
         # Store immediately in session state for easier access
         st.session_state.top_k_value = top_k
@@ -280,9 +304,9 @@ class LegalMindUI:
             "Response Creativity",
             min_value=0.0,
             max_value=1.0,
-            value=0.1,
+            value=st.session_state.temperature_value,
             step=0.1,
-            key="temperature_slider"  # Added unique key
+            key="temperature_slider"
         )
 
         # Store immediately in session state for easier access
@@ -304,17 +328,48 @@ class LegalMindUI:
             key="hallucination_mitigation_checkbox"
         )
 
-        st.session_state.generate_alternatives = st.sidebar.checkbox(
-            "Generate Alternative Responses",
-            value=st.session_state.generate_alternatives,
-            key="generate_alternatives_checkbox"
-        )
-
         st.session_state.show_rag_explanation = st.sidebar.checkbox(
             "Show RAG Strategy Explanation",
             value=st.session_state.show_rag_explanation,
             key="show_rag_explanation_checkbox"
         )
+
+        # RLHF Training section
+        st.sidebar.subheader("RLHF Training")
+
+        # Display training status
+        if self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
+            try:
+                rlhf_status = self.response_pipeline.rlhf.get_status()
+
+                # Display collected feedback count
+                feedback_count = rlhf_status["dataset"]["total_pairs"]
+                min_required = rlhf_status["min_preference_pairs"]
+
+                st.sidebar.metric("Collected Feedback", f"{feedback_count}/{min_required} pairs")
+
+                # Show training status
+                training_status = "Pending" if rlhf_status["pending_training"] else "Up to date"
+                st.sidebar.text(f"Training Status: {training_status}")
+
+                # Add train button
+                if st.sidebar.button("Train RLHF Model"):
+                    if feedback_count >= min_required:
+                        with st.sidebar:
+                            with st.spinner("Training RLHF model..."):
+                                success = self.response_pipeline.rlhf.run_training_if_needed()
+                                if success:
+                                    st.success("RLHF training completed!")
+                                else:
+                                    st.warning("Training not needed or already in progress.")
+                    else:
+                        st.sidebar.warning(f"Need at least {min_required} feedback pairs to train.")
+
+            except Exception as e:
+                logger.error(f"Error getting RLHF status: {str(e)}")
+                st.sidebar.warning("RLHF status unavailable")
+        else:
+            st.sidebar.warning("RLHF system not available")
 
         # About section
         st.sidebar.markdown("---")
@@ -328,31 +383,218 @@ class LegalMindUI:
             "qualified legal professional for advice specific to your situation."
         )
 
+    def _display_response(self, msg_idx, message):
+        """
+        Display a response with feedback buttons.
+
+        Args:
+            msg_idx: Message index in the conversation
+            message: The message dictionary
+        """
+        # Generate a unique key for this response
+        response_key = f"msg_{msg_idx}"
+
+        # Get the response content
+        response_content = message["content"]
+
+        # Display response content
+        st.markdown(response_content)
+
+        # Display confidence score if available and enabled
+        if "confidence" in message and st.session_state.show_confidence:
+            confidence = message["confidence"]
+            confidence_pct = int(confidence * 100)
+
+            # Choose color based on confidence level
+            if confidence >= 0.8:
+                confidence_color = "green"
+            elif confidence >= 0.6:
+                confidence_color = "orange"
+            else:
+                confidence_color = "red"
+
+            st.markdown(f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>", unsafe_allow_html=True)
+
+        # Show feedback section
+        feedback_container = st.container()
+        with feedback_container:
+            # Check if feedback was already submitted
+            if response_key in st.session_state.feedback_submitted:
+                # Show feedback status
+                feedback = st.session_state.feedback_submitted[response_key]
+                if feedback == "liked":
+                    st.markdown("✅ You liked this response")
+                elif feedback == "disliked":
+                    st.markdown("❌ You disliked this response")
+            else:
+                # Create feedback buttons
+                cols = st.columns([1, 1, 10])
+
+                # Function to handle like button click
+                def on_like_click():
+                    if self.pipeline_available and self.response_pipeline:
+                        self._handle_feedback(
+                            message.get("query", ""),
+                            response_content,
+                            True
+                        )
+                        st.session_state.feedback_submitted[response_key] = "liked"
+
+                        # Check if we should trigger RLHF training
+                        if self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
+                            try:
+                                if self.response_pipeline.rlhf.pending_training:
+                                    st.session_state.rlhf_training_pending = True
+                            except:
+                                pass
+
+                # Function to handle dislike button click
+                def on_dislike_click():
+                    if self.pipeline_available and self.response_pipeline:
+                        self._handle_feedback(
+                            message.get("query", ""),
+                            response_content,
+                            False
+                        )
+                        st.session_state.feedback_submitted[response_key] = "disliked"
+
+                        # Check if we should trigger RLHF training
+                        if self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
+                            try:
+                                if self.response_pipeline.rlhf.pending_training:
+                                    st.session_state.rlhf_training_pending = True
+                            except:
+                                pass
+
+                # Add the buttons with callbacks
+                with cols[0]:
+                    if st.button("👍", key=f"like_{response_key}", on_click=on_like_click):
+                        pass  # The actual action happens in the on_click function
+
+                with cols[1]:
+                    if st.button("👎", key=f"dislike_{response_key}", on_click=on_dislike_click):
+                        pass  # The actual action happens in the on_click function
+
     def _display_messages(self):
-        """Display the conversation history."""
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        """Display the conversation history with feedback buttons."""
+        for i, message in enumerate(st.session_state.messages):
+            # Display standard messages
+            if message["role"] in ["user", "system"]:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
-                # Display confidence score if available and enabled
-                if (message["role"] == "assistant" and
-                        "confidence" in message and
-                        st.session_state.show_confidence):
+            # Handle assistant messages
+            elif message["role"] == "assistant":
+                with st.chat_message("assistant"):
+                    # Display response content
+                    st.markdown(message["content"])
 
-                    confidence = message["confidence"]
+                    # Generate a unique key for this response
+                    feedback_key = f"msg_{i}"
 
-                    # Format confidence as percentage
-                    confidence_pct = int(confidence * 100)
+                    # Display confidence score if available and enabled
+                    if "confidence" in message and st.session_state.show_confidence:
+                        confidence = message["confidence"]
+                        confidence_pct = int(confidence * 100)
 
-                    # Choose color based on confidence level
-                    if confidence >= 0.8:
-                        confidence_color = "green"
-                    elif confidence >= 0.6:
-                        confidence_color = "orange"
+                        # Choose color based on confidence level
+                        if confidence >= 0.8:
+                            confidence_color = "green"
+                        elif confidence >= 0.6:
+                            confidence_color = "orange"
+                        else:
+                            confidence_color = "red"
+
+                        st.markdown(f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>", unsafe_allow_html=True)
+
+                    # Add feedback buttons directly here - always show for each message
+                    st.write("") # Add a small space
+
+                    # Check if feedback already submitted for this message
+                    if feedback_key in st.session_state.feedback_submitted:
+                        feedback = st.session_state.feedback_submitted[feedback_key]
+                        if feedback == "liked":
+                            st.success("✅ You liked this response")
+                        elif feedback == "disliked":
+                            st.error("❌ You disliked this response")
                     else:
-                        confidence_color = "red"
+                        # Show feedback buttons if no feedback yet submitted
+                        feedback_cols = st.columns([1, 1, 10])
 
-                    st.markdown(f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>", unsafe_allow_html=True)
+                        with feedback_cols[0]:
+                            if st.button("👍", key=f"like_{i}"):
+                                if self.pipeline_available and self.response_pipeline:
+                                    self._handle_feedback(
+                                        message.get("query", ""),
+                                        message["content"],
+                                        True
+                                    )
+                                    # Store feedback and force rerun
+                                    st.session_state.feedback_submitted[feedback_key] = "liked"
+                                    st.experimental_rerun()
+
+                        with feedback_cols[1]:
+                            if st.button("👎", key=f"dislike_{i}"):
+                                if self.pipeline_available and self.response_pipeline:
+                                    self._handle_feedback(
+                                        message.get("query", ""),
+                                        message["content"],
+                                        False
+                                    )
+                                    # Store feedback and force rerun
+                                    st.session_state.feedback_submitted[feedback_key] = "disliked"
+                                    st.experimental_rerun()
+
+    def _handle_feedback(self, query, response, is_positive):
+        """
+        Handle feedback for a response with like/dislike approach.
+
+        Args:
+            query: The original query
+            response: The response being rated
+            is_positive: True for like, False for dislike
+        """
+        if not self.pipeline_available or not self.response_pipeline:
+            return
+
+        # Use enhanced RLHF if available
+        if hasattr(self.response_pipeline, "rlhf") and hasattr(self.response_pipeline.rlhf, "collect_like_dislike_feedback"):
+            try:
+                # Use the enhanced feedback collection
+                self.response_pipeline.rlhf.collect_like_dislike_feedback(
+                    query=query,
+                    response=response,
+                    is_positive=is_positive
+                )
+                logger.info(f"Collected {'positive' if is_positive else 'negative'} feedback for response")
+                return
+            except Exception as e:
+                logger.error(f"Error collecting enhanced feedback: {str(e)}")
+                # Fall back to basic method
+
+        # Fallback to basic feedback collection
+        feedback_text = "Positive user feedback" if is_positive else "Negative user feedback"
+
+        if is_positive:
+            # For positive feedback, the current response is chosen
+            rejected = "This is a basic response without detail or citations."
+            self.response_pipeline.collect_feedback(
+                query,
+                [response, rejected],
+                chosen_idx=0,
+                feedback_text=feedback_text
+            )
+        else:
+            # For negative feedback, a better option is chosen
+            chosen = "I apologize, but I need more specific information to provide an accurate response about Australian law. Could you please provide more details about your legal question?"
+            self.response_pipeline.collect_feedback(
+                query,
+                [chosen, response],
+                chosen_idx=0,
+                feedback_text=feedback_text
+            )
+
+        logger.info(f"Collected {'positive' if is_positive else 'negative'} feedback using basic method")
 
     def _display_retrieved_docs(self, documents: List[Dict[str, Any]]):
         """Display the retrieved documents."""
@@ -455,52 +697,6 @@ class LegalMindUI:
                 for strategy, results in explanation["results_by_strategy"].items():
                     num_docs = results.get("num_docs", 0)
                     st.markdown(f"**{strategy}**: {num_docs} documents retrieved")
-
-    def _handle_response_feedback(self, query, responses):
-        """Handle user feedback on responses."""
-        if not self.pipeline_available or not self.response_pipeline:
-            return
-
-        # Check if we have alternative responses to collect feedback on
-        if len(responses) <= 1:
-            return
-
-        # If feedback already submitted, don't show again
-        if st.session_state.feedback_submitted:
-            return
-
-        with st.form("feedback_form"):
-            st.markdown("### Which response did you prefer?")
-
-            # Radio buttons for selecting preferred response
-            chosen_idx = st.radio(
-                "Select the most helpful response:",
-                options=list(range(1, len(responses) + 1)),
-                format_func=lambda x: f"Response {x}",
-                key="feedback_radio"  # Added unique key
-            ) - 1  # Convert to 0-indexed
-
-            # Text area for additional feedback
-            feedback_text = st.text_area(
-                "Optional feedback (what made this response better?):",
-                height=100,
-                key="feedback_text"  # Added unique key
-            )
-
-            # Submit button
-            submitted = st.form_submit_button("Submit Feedback")
-
-            if submitted:
-                # Collect feedback using RLHF component
-                self.response_pipeline.collect_feedback(
-                    query,
-                    responses,
-                    chosen_idx,
-                    feedback_text
-                )
-
-                st.success("Thank you for your feedback! It will help improve future responses.")
-                st.session_state.feedback_submitted = True
 
     def process_query(self, query: str):
         """
@@ -612,30 +808,8 @@ class LegalMindUI:
                 return
 
             # Update LLM temperature from session state
-            self.llm.temperature = st.session_state.get("temperature_slider", 0.1)
+            self.llm.temperature = st.session_state.get("temperature_value", 0.1)
             response = self.llm.generate(query, context)
-
-            # Generate alternative responses if requested
-            alternatives = []
-            if st.session_state.generate_alternatives:  # Use session state variable instead of checkbox
-                thinking_placeholder.markdown("Generating alternative responses...")
-
-                # Generate two additional responses with different temperatures
-                try:
-                    alt_response1 = self.llm.generate(query, context)
-                    # Use higher temperature for more diversity
-                    high_temp = min(st.session_state.temperature_value + 0.2, 1.0)
-                    self.llm.temperature = high_temp
-                    alt_response2 = self.llm.generate(query, context)
-
-                    # Restore original temperature
-                    self.llm.temperature = st.session_state.temperature_value
-
-                    alternatives = [response, alt_response1, alt_response2]
-                    st.session_state.alternative_responses = alternatives
-                except Exception as e:
-                    logger.error(f"Error generating alternative responses: {str(e)}")
-                    alternatives = []
 
             # Process through hallucination pipeline if available
             response_analysis = None
@@ -646,6 +820,21 @@ class LegalMindUI:
                 thinking_placeholder.markdown("Analyzing response for accuracy...")
 
                 try:
+                    # Try to use enhanced RLHF to improve response if available
+                    if hasattr(self.response_pipeline, "rlhf") and hasattr(self.response_pipeline.rlhf, "create_better_response"):
+                        try:
+                            # Use RLHF to potentially improve the response
+                            thinking_placeholder.markdown("Using RLHF feedback to enhance response...")
+                            rlhf_response = self.response_pipeline.rlhf.create_better_response(
+                                query, response, context, self.llm
+                            )
+                            if rlhf_response != response:
+                                logger.info("Response improved with RLHF")
+                                response = rlhf_response
+                        except Exception as e:
+                            logger.error(f"Error using RLHF to improve response: {str(e)}")
+
+                    # Apply hallucination mitigation
                     pipeline_result = self.response_pipeline.generate_improved_response(
                         query, context, response
                     )
@@ -666,12 +855,36 @@ class LegalMindUI:
             # Update message with response
             thinking_placeholder.markdown(improved_response)
 
+            # Add feedback buttons directly in this message context
+            col1, col2, col3 = st.columns([1, 1, 10])
+
+            # Generate a unique message ID for this response
+            message_id = len(st.session_state.messages)
+            feedback_key = f"msg_{message_id}"
+
+            with col1:
+                if st.button("👍", key=f"like_{feedback_key}"):
+                    if self.pipeline_available and self.response_pipeline:
+                        self._handle_feedback(query, improved_response, True)
+                        st.session_state.feedback_submitted[feedback_key] = "liked"
+                        st.success("Thanks for your positive feedback!")
+
+            with col2:
+                if st.button("👎", key=f"dislike_{feedback_key}"):
+                    if self.pipeline_available and self.response_pipeline:
+                        self._handle_feedback(query, improved_response, False)
+                        st.session_state.feedback_submitted[feedback_key] = "disliked"
+                        st.error("Thanks for your feedback. We'll improve!")
+
         # Add assistant message to chat with confidence score
-        st.session_state.messages.append({
+        message = {
             "role": "assistant",
             "content": improved_response,
-            "confidence": confidence_score
-        })
+            "confidence": confidence_score,
+            "query": query  # Store the query for feedback purposes
+        }
+
+        st.session_state.messages.append(message)
 
         # Display retrieved documents
         self._display_retrieved_docs(retrieved_docs)
@@ -684,11 +897,14 @@ class LegalMindUI:
         if response_analysis:
             self._display_response_analysis(response_analysis)
 
-        # Handle response feedback if we have alternatives
-        if alternatives:
-            self._handle_response_feedback(query, alternatives)
-        else:
-            st.session_state.feedback_submitted = False
+        # Check if RLHF training is pending and show a notification
+        if st.session_state.rlhf_training_pending and self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
+            try:
+                rlhf_status = self.response_pipeline.rlhf.get_status()
+                if rlhf_status["pending_training"]:
+                    st.info("📊 Enough feedback has been collected to train the RLHF model. Use the 'Train RLHF Model' button in the sidebar to improve response quality.")
+            except:
+                pass
 
     def run(self):
         """Run the Streamlit application."""
@@ -724,6 +940,12 @@ class LegalMindUI:
                 "- Explain the legal principles in contract law regarding offer and acceptance."
                 "\n"
                 "- What are my rights as a tenant in Victoria?"
+                "\n\n"
+                "**Features**:"
+                "\n"
+                "- 👍/👎 Feedback: Rate responses to help improve future answers"
+                "\n"
+                "- 🧠 RLHF Learning: The system learns from your feedback to generate better responses"
                 "\n\n"
                 "**Note**: I provide legal information, not legal advice. For advice specific to "
                 "your situation, please consult a qualified legal professional."

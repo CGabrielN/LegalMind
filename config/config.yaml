@@ -116,7 +116,7 @@ rlhf:
     batch_size: 8
   feedback:
     feedback_path: "data/feedback"
-    min_preference_pairs: 50
+    min_preference_pairs: 10
   confidence_threshold: 0.7
 
 # Citation handling settings
