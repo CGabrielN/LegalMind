@@ -1,9 +1,9 @@
 """
-LegalMind Hallucination Detection and Mitigation
+LegalMind Hallucination Detection (Header Part)
 
 This module implements detection and mitigation strategies for hallucinations
 in legal responses, with a focus on verifying citations and claims against
-the retrieved context.
+the retrieved context. Uses LM Studio for embeddings.
 """
 
 import re
@@ -11,8 +11,10 @@ import yaml
 import logging
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional, Set
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Import our embedding model
+from ..embeddings.embedding import EmbeddingModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -29,9 +31,8 @@ class LegalHallucinationDetector:
 
     def __init__(self):
         """Initialize the hallucination detector."""
-        # Load a sentence transformer model for semantic similarity
-        self.model_name = "all-MiniLM-L6-v2"  # Lightweight model for semantic similarity
-        self.model = SentenceTransformer(self.model_name)
+        # Use the EmbeddingModel that works with LM Studio API
+        self.embedding_model = EmbeddingModel()
 
         # Confidence threshold for factual claims
         self.confidence_threshold = 0.7
@@ -52,7 +53,7 @@ class LegalHallucinationDetector:
             r"leading authority"
         ]
 
-        logger.info("Initialized legal hallucination detector")
+        logger.info("Initialized legal hallucination detector with LM Studio embedding model")
 
     def extract_citations(self, text: str) -> List[str]:
         """
@@ -157,12 +158,16 @@ class LegalHallucinationDetector:
         if not context_paragraphs:
             return False, 0.0
 
-        # Embed claim and paragraphs
-        claim_embedding = self.model.encode([claim])[0]
-        paragraph_embeddings = self.model.encode(context_paragraphs)
+        # Embed claim and paragraphs using EmbeddingModel
+        claim_embedding = self.embedding_model.embed_text(claim)
+        paragraph_embeddings = self.embedding_model.embed_texts(context_paragraphs)
+
+        # Reshape for similarity calculation
+        claim_embedding = claim_embedding.reshape(1, -1)
+        paragraph_embeddings = np.array([emb.reshape(-1) for emb in paragraph_embeddings])
 
         # Calculate similarities
-        similarities = cosine_similarity([claim_embedding], paragraph_embeddings)[0]
+        similarities = cosine_similarity(claim_embedding, paragraph_embeddings)[0]
 
         # Get max similarity
         max_sim = np.max(similarities)
@@ -339,169 +344,9 @@ class LegalHallucinationDetector:
 
         return replacements.get(pattern, "may")
 
-class CitationVerifier:
-    """
-    Specialized verification of Australian legal citations.
-    """
-
-    def __init__(self):
-        """Initialize the citation verifier."""
-        # Load jurisdiction abbreviations
-        self.jurisdictions = {
-            "HCA": "High Court of Australia",
-            "FCAFC": "Federal Court of Australia (Full Court)",
-            "FCA": "Federal Court of Australia",
-            "NSWSC": "New South Wales Supreme Court",
-            "NSWCA": "New South Wales Court of Appeal",
-            "VSC": "Victoria Supreme Court",
-            "VSCA": "Victoria Court of Appeal",
-            "QSC": "Queensland Supreme Court",
-            "QCA": "Queensland Court of Appeal",
-            "WASC": "Western Australia Supreme Court",
-            "WASCA": "Western Australia Court of Appeal",
-            "SASC": "South Australia Supreme Court",
-            "SASCFC": "South Australia Supreme Court (Full Court)",
-            "TASSC": "Tasmania Supreme Court",
-            "NTSC": "Northern Territory Supreme Court",
-            "ACTSC": "Australian Capital Territory Supreme Court"
-        }
-
-        logger.info("Initialized citation verifier")
-
-    def parse_citation(self, citation: str) -> Dict[str, Any]:
-        """
-        Parse an Australian legal citation.
-
-        Args:
-            citation: Citation string
-
-        Returns:
-            Dictionary with parsed components
-        """
-        # Pattern: Case name v Respondent [Year] Court Number
-        # Example: "Smith v Jones [2010] NSWSC 123"
-
-        parts = {}
-
-        try:
-            # Extract case name
-            name_match = re.match(r"(.+?)\s+\[", citation)
-            if name_match:
-                parts["case_name"] = name_match.group(1).strip()
-
-            # Extract year
-            year_match = re.search(r"\[(\d{4})\]", citation)
-            if year_match:
-                parts["year"] = year_match.group(1)
-
-            # Extract court and number
-            court_match = re.search(r"\[\d{4}\]\s+([A-Z]+)\s+(\d+)", citation)
-            if court_match:
-                court_abbr = court_match.group(1)
-                parts["court_abbr"] = court_abbr
-                parts["court"] = self.jurisdictions.get(court_abbr, court_abbr)
-                parts["number"] = court_match.group(2)
-
-            return parts
-
-        except Exception as e:
-            logger.warning(f"Error parsing citation '{citation}': {str(e)}")
-            return {"original": citation}
-
-    def validate_citation_format(self, citation: str) -> bool:
-        """
-        Validate if a citation follows the expected Australian format.
-
-        Args:
-            citation: Citation string
-
-        Returns:
-            Whether the citation is valid
-        """
-        # Basic pattern for Australian citations
-        pattern = r"^[A-Za-z\s]+\sv\s[A-Za-z\s]+\s\[\d{4}\]\s[A-Z]+\s\d+$"
-        return bool(re.match(pattern, citation))
-
-    def check_jurisdiction_consistency(self, citation: str, jurisdiction: str) -> bool:
-        """
-        Check if a citation is consistent with the specified jurisdiction.
-
-        Args:
-            citation: Citation string
-            jurisdiction: Jurisdiction name
-
-        Returns:
-            Whether the citation is consistent with the jurisdiction
-        """
-        # Parse citation
-        parts = self.parse_citation(citation)
-
-        # If parsing failed, return False
-        if "court" not in parts:
-            return False
-
-        # Check if court is in the specified jurisdiction
-        court = parts["court"]
-
-        # Handle special cases for federal courts
-        if jurisdiction.lower() in ["federal", "commonwealth", "australia"]:
-            return any(prefix in court.lower() for prefix in ["federal", "high court", "australia"])
-
-        # Check if jurisdiction name appears in court name
-        return jurisdiction.lower() in court.lower()
-
-    def find_similar_citations(self, citation: str, context: str) -> List[str]:
-        """
-        Find similar citations in the context.
-
-        Args:
-            citation: Citation string
-            context: Retrieved context
-
-        Returns:
-            List of similar citations found in context
-        """
-        # Parse the citation to extract components
-        parts = self.parse_citation(citation)
-
-        # If parsing failed, return empty list
-        if "case_name" not in parts:
-            return []
-
-        # Extract all citations from context
-        all_citations = re.findall(r"([A-Za-z\s]+\sv\s[A-Za-z\s]+\s\[\d{4}\]\s[A-Z]+\s\d+)", context)
-
-        # Filter for citations with similar case name
-        similar_citations = []
-
-        case_name = parts.get("case_name", "")
-        case_parties = case_name.split(" v ")
-
-        for ctx_citation in all_citations:
-            # Parse context citation
-            ctx_parts = self.parse_citation(ctx_citation)
-
-            # If parsing failed, skip
-            if "case_name" not in ctx_parts:
-                continue
-
-            # Check for similar case name
-            ctx_case_name = ctx_parts["case_name"]
-            ctx_parties = ctx_case_name.split(" v ")
-
-            # If at least one party name matches
-            if len(case_parties) > 0 and len(ctx_parties) > 0:
-                if case_parties[0].lower() in ctx_parties[0].lower() or \
-                        (len(case_parties) > 1 and len(ctx_parties) > 1 and \
-                         case_parties[1].lower() in ctx_parties[1].lower()):
-                    similar_citations.append(ctx_citation)
-
-            # Also check for same year and court
-            elif parts.get("year") == ctx_parts.get("year") and \
-                    parts.get("court_abbr") == ctx_parts.get("court_abbr"):
-                similar_citations.append(ctx_citation)
-
-        return similar_citations
+"""
+ConfidenceScoring class to work with LM Studio API
+"""
 
 class ConfidenceScoring:
     """
@@ -510,6 +355,10 @@ class ConfidenceScoring:
 
     def __init__(self):
         """Initialize the confidence scorer."""
+        # Use the EmbeddingModel that works with LM Studio API
+        from ..embeddings.embedding import EmbeddingModel
+        self.embedding_model = EmbeddingModel()
+
         # Keywords that indicate jurisdiction-specific content
         self.jurisdiction_keywords = {
             "nsw": ["new south wales", "nsw", "sydney"],
@@ -534,10 +383,7 @@ class ConfidenceScoring:
             "consumer": ["consumer", "goods", "services", "warranty", "refund"]
         }
 
-        # Initialize embeddings model for semantic similarity
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
-
-        logger.info("Initialized confidence scoring system")
+        logger.info("Initialized confidence scoring system with LM Studio embedding model")
 
     def identify_jurisdictions(self, text: str) -> Dict[str, float]:
         """
@@ -640,14 +486,18 @@ class ConfidenceScoring:
         citation_score = sum(citation_scores) / len(citation_scores) if citation_scores else 1.0
 
         # Calculate semantic similarity between response and context
-        response_embedding = self.model.encode([response])[0]
+        response_embedding = self.embedding_model.embed_text(response)
 
         # Split context into chunks to handle large contexts
         context_chunks = [context[i:i+1000] for i in range(0, len(context), 1000)]
-        chunk_embeddings = self.model.encode(context_chunks)
+        chunk_embeddings = self.embedding_model.embed_texts(context_chunks)
 
-        # Calculate max similarity with any chunk
-        similarities = cosine_similarity([response_embedding], chunk_embeddings)[0]
+        # Reshape for similarity calculation
+        response_embedding = response_embedding.reshape(1, -1)
+        chunk_embeddings = np.array([emb.reshape(-1) for emb in chunk_embeddings])
+
+        # Calculate similarities
+        similarities = cosine_similarity(response_embedding, chunk_embeddings)[0]
         semantic_score = float(np.max(similarities))
 
         # Combine scores with weights
@@ -831,3 +681,168 @@ class HallucinationMitigation:
 
         logger.info("Completed hallucination mitigation")
         return modified_response
+
+# The CitationVerifier class remains largely unchanged except for importing dependencies
+class CitationVerifier:
+    """
+    Specialized verification of Australian legal citations.
+    """
+
+    def __init__(self):
+        """Initialize the citation verifier."""
+        # Load jurisdiction abbreviations
+        self.jurisdictions = {
+            "HCA": "High Court of Australia",
+            "FCAFC": "Federal Court of Australia (Full Court)",
+            "FCA": "Federal Court of Australia",
+            "NSWSC": "New South Wales Supreme Court",
+            "NSWCA": "New South Wales Court of Appeal",
+            "VSC": "Victoria Supreme Court",
+            "VSCA": "Victoria Court of Appeal",
+            "QSC": "Queensland Supreme Court",
+            "QCA": "Queensland Court of Appeal",
+            "WASC": "Western Australia Supreme Court",
+            "WASCA": "Western Australia Court of Appeal",
+            "SASC": "South Australia Supreme Court",
+            "SASCFC": "South Australia Supreme Court (Full Court)",
+            "TASSC": "Tasmania Supreme Court",
+            "NTSC": "Northern Territory Supreme Court",
+            "ACTSC": "Australian Capital Territory Supreme Court"
+        }
+
+        logger.info("Initialized citation verifier")
+
+    def parse_citation(self, citation: str) -> Dict[str, Any]:
+        """
+        Parse an Australian legal citation.
+
+        Args:
+            citation: Citation string
+
+        Returns:
+            Dictionary with parsed components
+        """
+        # Pattern: Case name v Respondent [Year] Court Number
+        # Example: "Smith v Jones [2010] NSWSC 123"
+
+        parts = {}
+
+        try:
+            # Extract case name
+            name_match = re.match(r"(.+?)\s+\[", citation)
+            if name_match:
+                parts["case_name"] = name_match.group(1).strip()
+
+            # Extract year
+            year_match = re.search(r"\[(\d{4})\]", citation)
+            if year_match:
+                parts["year"] = year_match.group(1)
+
+            # Extract court and number
+            court_match = re.search(r"\[\d{4}\]\s+([A-Z]+)\s+(\d+)", citation)
+            if court_match:
+                court_abbr = court_match.group(1)
+                parts["court_abbr"] = court_abbr
+                parts["court"] = self.jurisdictions.get(court_abbr, court_abbr)
+                parts["number"] = court_match.group(2)
+
+            return parts
+
+        except Exception as e:
+            logger.warning(f"Error parsing citation '{citation}': {str(e)}")
+            return {"original": citation}
+
+    def validate_citation_format(self, citation: str) -> bool:
+        """
+        Validate if a citation follows the expected Australian format.
+
+        Args:
+            citation: Citation string
+
+        Returns:
+            Whether the citation is valid
+        """
+        # Basic pattern for Australian citations
+        pattern = r"^[A-Za-z\s]+\sv\s[A-Za-z\s]+\s\[\d{4}\]\s[A-Z]+\s\d+$"
+        return bool(re.match(pattern, citation))
+
+    def check_jurisdiction_consistency(self, citation: str, jurisdiction: str) -> bool:
+        """
+        Check if a citation is consistent with the specified jurisdiction.
+
+        Args:
+            citation: Citation string
+            jurisdiction: Jurisdiction name
+
+        Returns:
+            Whether the citation is consistent with the jurisdiction
+        """
+        # Parse citation
+        parts = self.parse_citation(citation)
+
+        # If parsing failed, return False
+        if "court" not in parts:
+            return False
+
+        # Check if court is in the specified jurisdiction
+        court = parts["court"]
+
+        # Handle special cases for federal courts
+        if jurisdiction.lower() in ["federal", "commonwealth", "australia"]:
+            return any(prefix in court.lower() for prefix in ["federal", "high court", "australia"])
+
+        # Check if jurisdiction name appears in court name
+        return jurisdiction.lower() in court.lower()
+
+    def find_similar_citations(self, citation: str, context: str) -> List[str]:
+        """
+        Find similar citations in the context.
+
+        Args:
+            citation: Citation string
+            context: Retrieved context
+
+        Returns:
+            List of similar citations found in context
+        """
+        # Parse the citation to extract components
+        parts = self.parse_citation(citation)
+
+        # If parsing failed, return empty list
+        if "case_name" not in parts:
+            return []
+
+        # Extract all citations from context
+        all_citations = re.findall(r"([A-Za-z\s]+\sv\s[A-Za-z\s]+\s\[\d{4}\]\s[A-Z]+\s\d+)", context)
+
+        # Filter for citations with similar case name
+        similar_citations = []
+
+        case_name = parts.get("case_name", "")
+        case_parties = case_name.split(" v ")
+
+        for ctx_citation in all_citations:
+            # Parse context citation
+            ctx_parts = self.parse_citation(ctx_citation)
+
+            # If parsing failed, skip
+            if "case_name" not in ctx_parts:
+                continue
+
+            # Check for similar case name
+            ctx_case_name = ctx_parts["case_name"]
+            ctx_parties = ctx_case_name.split(" v ")
+
+            # If at least one party name matches
+            if len(case_parties) > 0 and len(ctx_parties) > 0:
+                if case_parties[0].lower() in ctx_parties[0].lower() or \
+                        (len(case_parties) > 1 and len(ctx_parties) > 1 and \
+                         case_parties[1].lower() in ctx_parties[1].lower()):
+                    similar_citations.append(ctx_citation)
+
+            # Also check for same year and court
+            elif parts.get("year") == ctx_parts.get("year") and \
+                    parts.get("court_abbr") == ctx_parts.get("court_abbr"):
+                similar_citations.append(ctx_citation)
+
+        return similar_citations

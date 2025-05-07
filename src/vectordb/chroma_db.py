@@ -2,17 +2,18 @@
 LegalMind Vector Database
 
 This module handles the Chroma vector database integration for storing
-and retrieving legal document embeddings.
+and retrieving legal document embeddings using LM Studio API.
 """
 
-import os
-import yaml
-import uuid
 import logging
+import os
+import uuid
 from typing import List, Dict, Any, Optional, Union
+
 import chromadb
+import numpy as np
+import yaml
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -21,6 +22,24 @@ logger = logging.getLogger(__name__)
 # Load configuration
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
+
+
+class LMStudioEmbeddingFunction:
+    """Custom embedding function for Chroma that uses LM Studio API."""
+
+    def __init__(self):
+        """Initialize with LM Studio embedding model."""
+        # Import here to avoid circular imports
+        from ..embeddings.embedding import EmbeddingModel
+        self.embedding_model = EmbeddingModel()
+        logger.info("Initialized LM Studio embedding function")
+
+    def __call__(self, texts):
+        """Generate embeddings for documents using LM Studio API."""
+        embeddings = self.embedding_model.embed_texts(texts)
+        # Convert numpy arrays to lists for Chroma
+        return [embedding.tolist() if isinstance(embedding, np.ndarray) else embedding for embedding in embeddings]
+
 
 class ChromaVectorStore:
     """Manages the Chroma vector database for legal document retrieval."""
@@ -49,19 +68,12 @@ class ChromaVectorStore:
 
     def _initialize_collection(self):
         """Initialize or get the Chroma collection."""
-        # Use the specified embedding model
-        embedding_model = config["embedding"]["model_name"]
-
-        # Setup embedding function based on model
+        # Use the custom LM Studio embedding function
         try:
-            # First try the default sentence transformer embedding function
-            # This doesn't require an API key
-            self.ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=embedding_model
-            )
-            logger.info(f"Using SentenceTransformerEmbeddingFunction with model: {embedding_model}")
+            self.ef = LMStudioEmbeddingFunction()
+            logger.info("Using LM Studio API for embeddings")
         except Exception as e:
-            logger.warning(f"Error initializing SentenceTransformerEmbeddingFunction: {str(e)}")
+            logger.warning(f"Error initializing LM Studio embedding function: {str(e)}")
             logger.info("Using default embedding function")
             # Fall back to default embedding function (no model required)
             self.ef = None
@@ -104,7 +116,7 @@ class ChromaVectorStore:
 
         # Process in batches to avoid memory issues
         for i in range(0, len(documents), batch_size):
-            batch = documents[i:i+batch_size]
+            batch = documents[i:i + batch_size]
 
             # Prepare batch data
             ids = [str(uuid.uuid4()) for _ in range(len(batch))]
@@ -118,7 +130,7 @@ class ChromaVectorStore:
                     documents=texts,
                     metadatas=metadatas
                 )
-                logger.info(f"Added batch {i//batch_size + 1}/{(len(documents)-1)//batch_size + 1}")
+                logger.info(f"Added batch {i // batch_size + 1}/{(len(documents) - 1) // batch_size + 1}")
             except Exception as e:
                 logger.error(f"Error adding batch to Chroma: {str(e)}")
 

@@ -2,7 +2,7 @@
 LegalMind Evaluation Metrics
 
 This module provides metrics for evaluating the performance of the LegalMind
-retrieval and generation system.
+retrieval and generation system, using LM Studio for embeddings.
 """
 
 import logging
@@ -13,6 +13,7 @@ import numpy as np
 import yaml
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Import the LM Studio embedding model
 from ..embeddings.embedding import EmbeddingModel
 
 # Configure logging
@@ -98,16 +99,18 @@ class RetrievalEvaluator:
         if not retrieved_docs:
             return 0.0
 
-        # Embed the query
+        # Embed the query using LM Studio API
         query_embedding = self.embedding_model.embed_text(query)
-        query_embedding = np.array(query_embedding).reshape(1, -1)
+
+        # Reshape for similarity calculation
+        query_embedding = query_embedding.reshape(1, -1)
 
         # Embed each document
         doc_embeddings = []
         for doc in retrieved_docs:
             doc_text = doc["text"]
             doc_embedding = self.embedding_model.embed_text(doc_text)
-            doc_embeddings.append(doc_embedding)
+            doc_embeddings.append(doc_embedding.reshape(-1))
 
         # Convert to numpy array
         doc_embeddings = np.array(doc_embeddings)
@@ -231,13 +234,13 @@ class ResponseEvaluator:
         Returns:
             Completeness score (0-1)
         """
-        # Embed both texts
+        # Embed both texts using LM Studio API
         response_embedding = self.embedding_model.embed_text(response)
         reference_embedding = self.embedding_model.embed_text(reference_answer)
 
-        # Convert to numpy arrays
-        response_embedding = np.array(response_embedding).reshape(1, -1)
-        reference_embedding = np.array(reference_embedding).reshape(1, -1)
+        # Reshape for similarity calculation
+        response_embedding = response_embedding.reshape(1, -1)
+        reference_embedding = reference_embedding.reshape(1, -1)
 
         # Calculate cosine similarity
         similarity = cosine_similarity(response_embedding, reference_embedding)[0][0]
