@@ -37,7 +37,7 @@ class MultiQueryRAG:
 
         logger.info("Initialized Multi-Query RAG system")
 
-    def _generate_query_perspectives(self, query: str) -> List[str]:
+    def generate_query_perspectives(self, query: str) -> List[str]:
         """
         Generate different perspective queries for the same legal question.
 
@@ -99,7 +99,7 @@ class MultiQueryRAG:
         logger.info(f"Multi-query retrieval for: '{query[:50]}...'")
 
         # Generate query perspectives
-        perspectives = self._generate_query_perspectives(query)
+        perspectives = self.generate_query_perspectives(query)
 
         # Results storage
         all_results = []

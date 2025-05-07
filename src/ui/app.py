@@ -272,6 +272,8 @@ class LegalMindUI:
             value=5,
             key="top_k_slider"  # Added unique key
         )
+        # Store immediately in session state for easier access
+        st.session_state.top_k_value = top_k
 
         # Temperature setting
         temperature = st.sidebar.slider(
@@ -282,6 +284,9 @@ class LegalMindUI:
             step=0.1,
             key="temperature_slider"  # Added unique key
         )
+
+        # Store immediately in session state for easier access
+        st.session_state.temperature_value = temperature
 
         # Response Quality Settings
         st.sidebar.subheader("Response Quality")
@@ -512,8 +517,22 @@ class LegalMindUI:
             thinking_placeholder = st.empty()
             thinking_placeholder.markdown("Thinking...")
 
+            # Get values from session state
+            top_k_value = st.session_state.top_k_value
+
             # Determine which RAG strategy to use
             rag_strategy = st.session_state.rag_strategy
+
+            # Update the top_k parameter in all RAG strategies
+            self.basic_rag.top_k = top_k_value
+            if hasattr(self, 'query_expansion'):
+                self.query_expansion.top_k = top_k_value
+            if hasattr(self, 'multi_query_rag'):
+                self.multi_query_rag.top_k = top_k_value
+            if hasattr(self, 'metadata_enhanced_rag'):
+                self.metadata_enhanced_rag.top_k = top_k_value
+            if hasattr(self, 'advanced_rag'):
+                self.advanced_rag.top_k = top_k_value
 
             # Use retrieval with appropriate strategy
             thinking_placeholder.markdown(f"Retrieving relevant documents using {rag_strategy} strategy...")
@@ -523,7 +542,7 @@ class LegalMindUI:
                 rag_explanation = None
             elif rag_strategy == "query_expansion":
                 # Expand the query
-                expanded_queries = self.query_expander.expand_query(query)
+                expanded_queries = self.query_expansion.expand_query(query)
                 expanded_query = expanded_queries[0] if expanded_queries else query
 
                 # Use basic RAG with expanded query
@@ -535,7 +554,7 @@ class LegalMindUI:
                     "query_expansion": {
                         "original_query": query,
                         "expanded_queries": expanded_queries,
-                        "legal_terms": self.query_expander.identify_legal_terms(query)
+                        "legal_terms": self.query_expansion.identify_legal_terms(query)
                     }
                 }
             elif rag_strategy == "multi_query":
@@ -545,7 +564,7 @@ class LegalMindUI:
                 rag_explanation = {
                     "best_strategy": "multi_query",
                     "multi_query": {
-                        "perspectives": self.multi_query_rag._generate_query_perspectives(query)
+                        "perspectives": self.multi_query_rag.generate_query_perspectives(query)
                     }
                 }
             elif rag_strategy == "metadata_enhanced":
@@ -555,7 +574,7 @@ class LegalMindUI:
                 rag_explanation = {
                     "best_strategy": "metadata_enhanced",
                     "metadata_enhanced": {
-                        "jurisdiction": self.query_expander.identify_jurisdiction(query)
+                        "jurisdiction": self.query_expansion.identify_jurisdiction(query)
                     }
                 }
             else:  # advanced (auto-select)
@@ -592,6 +611,8 @@ class LegalMindUI:
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 return
 
+            # Update LLM temperature from session state
+            self.llm.temperature = st.session_state.get("temperature_slider", 0.1)
             response = self.llm.generate(query, context)
 
             # Generate alternative responses if requested
@@ -603,10 +624,12 @@ class LegalMindUI:
                 try:
                     alt_response1 = self.llm.generate(query, context)
                     # Use higher temperature for more diversity
-                    temp_backup = self.llm.temperature
-                    self.llm.temperature = 0.3
+                    high_temp = min(st.session_state.temperature_value + 0.2, 1.0)
+                    self.llm.temperature = high_temp
                     alt_response2 = self.llm.generate(query, context)
-                    self.llm.temperature = temp_backup
+
+                    # Restore original temperature
+                    self.llm.temperature = st.session_state.temperature_value
 
                     alternatives = [response, alt_response1, alt_response2]
                     st.session_state.alternative_responses = alternatives
@@ -681,6 +704,9 @@ class LegalMindUI:
 
         # Display chat input
         if query := st.chat_input("Ask a legal question about Australian law..."):
+            # Add user message directly to the UI first
+            with st.chat_message("user"):
+                st.markdown(query)
             self.process_query(query)
 
         # Welcome message for new conversations
