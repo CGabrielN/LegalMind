@@ -9,7 +9,13 @@ import yaml
 import logging
 from typing import Dict, List, Any, Optional, Tuple
 
-from .rlhf import LegalRLHF
+try:
+    from .enhanced_rlhf import EnhancedLegalRLHF as LegalRLHF
+    USING_ENHANCED_RLHF = True
+except ImportError:
+    from .rlhf import LegalRLHF
+    USING_ENHANCED_RLHF = False
+
 from .hallucination_detector import HallucinationMitigation
 from .citation_handler import CitationCrossReferencer, CitationVerification, CitationFormatting
 

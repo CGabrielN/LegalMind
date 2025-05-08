@@ -233,7 +233,7 @@ class AdvancedRAG:
             }
         elif strategy == "multi_query" and self.use_multi_query:
             explanation["multi_query"] = {
-                "perspectives": self.multi_query_rag._generate_query_perspectives(query)
+                "perspectives": self.multi_query_rag.generate_query_perspectives(query)
             }
         elif strategy == "metadata_enhanced" and self.use_metadata_enhanced:
             explanation["metadata_enhanced"] = {
