@@ -169,9 +169,6 @@ class MetadataEnhancedRAG:
         # Identify jurisdiction
         jurisdiction = self.query_expander.identify_jurisdiction(query)
 
-        # Basic similarity search
-        query_embedding = self.embedding_model.embed_text(query)
-
         # Set up filters
         filters = {}
         if jurisdiction:
@@ -231,6 +228,10 @@ class MetadataEnhancedRAG:
 
         # Take top_k
         top_documents = documents[:self.top_k]
+
+        # Use the citation network to rerank documents
+        if len(top_documents) > 1:
+            top_documents = self.rerank_with_citation_network(top_documents)
 
         logger.info(f"Retrieved {len(top_documents)} documents with metadata enhancement")
         return top_documents
@@ -362,7 +363,6 @@ class MetadataEnhancedRAG:
 
         return citation_network
 
-    # TODO: use this so that rag can be used properly to get documents based on citation network
     def rerank_with_citation_network(self, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Rerank documents based on citation network analysis.

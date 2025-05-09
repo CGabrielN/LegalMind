@@ -73,14 +73,14 @@ rag:
     enabled: true
     top_k: 5
   query_expansion:
-    enabled: true  # Now enabled in Week 9-10
+    enabled: true
     top_k: 5
     expansion_strategies:
       synonyms: true
       legal_terms: true
       jurisdiction_specific: true
   multi_query:
-    enabled: true  # Now enabled in Week 9-10
+    enabled: true
     top_k: 6
     max_perspectives: 3
     strategies:
@@ -90,7 +90,7 @@ rag:
       statutory_perspective: true
       case_law_perspective: true
   metadata_enhanced:
-    enabled: true  # Now enabled in Week 9-10
+    enabled: true
     top_k: 7
     weights:
       similarity: 0.6

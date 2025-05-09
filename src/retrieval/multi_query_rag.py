@@ -108,46 +108,33 @@ class MultiQueryRAG:
         # Generate query perspectives
         perspectives = self.generate_query_perspectives(query)
 
-        # Results storage
-        all_results = []
-        doc_ids = set()  # Track seen document IDs to avoid duplicates
+        # Results storage for each perspective
+        perspective_results = []
 
         # Retrieve documents for each perspective
         for perspective in perspectives:
-            # Embed the perspective query
-            query_embedding = self.embedding_model.embed_text(perspective)
-
             # Query the vector store
             results = self.vector_store.query(perspective, n_results=self.top_k)
 
             # Process results
+            documents = []
             for i in range(len(results["documents"][0])):
-                doc_id = results["ids"][0][i] if results["ids"][0] else f"doc_{i}"
-
-                # Skip if we've already seen this document
-                if doc_id in doc_ids:
-                    continue
-
-                doc_ids.add(doc_id)
-
                 document = {
                     "text": results["documents"][0][i],
                     "metadata": results["metadatas"][0][i] if results["metadatas"][0] else {},
-                    "id": doc_id,
+                    "id": results["ids"][0][i] if results["ids"][0] else f"doc_{i}",
                     "score": 1.0 - results["distances"][0][i] if results["distances"][0] else 0.0,
                     "perspective": perspective
                 }
+                documents.append(document)
 
-                all_results.append(document)
+            perspective_results.append(documents)
 
-        # Sort by similarity score
-        all_results.sort(key=lambda x: x["score"], reverse=True)
+        # Use the combine_results method to merge and deduplicate results
+        combined_results = self.combine_results(perspective_results, perspectives)
 
-        # Limit to top_k unique results
-        top_results = all_results[:self.top_k]
-
-        logger.info(f"Retrieved {len(top_results)} unique documents using {len(perspectives)} query perspectives")
-        return top_results
+        logger.info(f"Retrieved {len(combined_results)} unique documents using {len(perspectives)} query perspectives")
+        return combined_results
 
     @staticmethod
     def prepare_context(documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
@@ -225,8 +212,6 @@ class MultiQueryRAG:
 
         return context, documents
 
-    #TODO: make the implementation use the combine_results method to combine results if using multi-query rag and show
-    # the final results
     def combine_results(self, query_results: List[List[Dict[str, Any]]], perspectives: List[str]) -> List[
         Dict[str, Any]]:
         """
