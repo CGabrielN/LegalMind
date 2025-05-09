@@ -94,35 +94,46 @@ class AustralianCitationExtractor:
         """
         citations = []
 
-        # Find all case citations in text
-        matches = re.finditer(self.case_pattern, text)
+        try:
+            # Clean up the text - remove extra spaces
+            text = ' '.join(text.split())
 
-        for match in matches:
-            case_name = match.group(1)
-            year = match.group(2)
-            court_abbr = match.group(3)
-            number = match.group(4)
+            # Find all case citations in text
+            matches = re.finditer(self.case_pattern, text)
 
-            # Determine jurisdiction from court abbreviation
-            jurisdiction = self.court_jurisdictions.get(court_abbr, "Unknown")
+            for match in matches:
+                try:
+                    case_name = match.group(1).strip()
+                    year = match.group(2)
+                    court_abbr = match.group(3)
+                    number = match.group(4)
 
-            # Create Citation object
-            citation = Citation(
-                full_citation=match.group(0),
-                case_name=case_name,
-                parties=case_name.split(" v "),
-                year=year,
-                court=self.court_jurisdictions.get(court_abbr, court_abbr),
-                court_abbr=court_abbr,
-                number=number,
-                jurisdiction=jurisdiction,
-                citation_type="case"
-            )
+                    # Determine jurisdiction from court abbreviation
+                    jurisdiction = self.court_jurisdictions.get(court_abbr, "Unknown")
 
-            citations.append(citation)
+                    # Create Citation object
+                    citation = Citation(
+                        full_citation=match.group(0).strip(),
+                        case_name=case_name,
+                        parties=case_name.split(" v "),
+                        year=year,
+                        court=self.court_jurisdictions.get(court_abbr, court_abbr),
+                        court_abbr=court_abbr,
+                        number=number,
+                        jurisdiction=jurisdiction,
+                        citation_type="case"
+                    )
 
-        logger.info(f"Extracted {len(citations)} case citations")
-        return citations
+                    citations.append(citation)
+                except Exception as e:
+                    logger.warning(f"Error processing citation match: {str(e)}")
+                    continue
+
+            logger.info(f"Extracted {len(citations)} case citations")
+            return citations
+        except Exception as e:
+            logger.error(f"Error in citation extraction: {str(e)}")
+            return citations
 
     def extract_statute_citations(self, text: str) -> List[Citation]:
         """

@@ -76,12 +76,18 @@ class MetadataEnhancedRAG:
         Returns:
             Court identifier or None
         """
-        # Pattern for Australian citations
-        pattern = r"\[\d{4}\]\s+([A-Z]+)\s+\d+"
-        match = re.search(pattern, citation)
+        try:
+            # Clean the citation string
+            citation = citation.strip()
 
-        if match:
-            return match.group(1)
+            # Pattern for Australian citations
+            pattern = r"\[\d{4}\]\s+([A-Z]+)\s+\d+"
+            match = re.search(pattern, citation)
+
+            if match:
+                return match.group(1)
+        except Exception as e:
+            logger.warning(f"Error extracting court from citation: {str(e)}")
 
         return None
 
@@ -96,15 +102,21 @@ class MetadataEnhancedRAG:
         Returns:
             Year as integer or None
         """
-        # Pattern for year in Australian citations
-        pattern = r"\[(\d{4})\]"
-        match = re.search(pattern, citation)
+        try:
+            # Clean the citation string
+            citation = citation.strip()
 
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
-                return None
+            # Pattern for year in Australian citations
+            pattern = r"\[(\d{4})\]"
+            match = re.search(pattern, citation)
+
+            if match:
+                try:
+                    return int(match.group(1))
+                except ValueError:
+                    return None
+        except Exception as e:
+            logger.warning(f"Error extracting year from citation: {str(e)}")
 
         return None
 

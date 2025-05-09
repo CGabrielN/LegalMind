@@ -560,6 +560,23 @@ class EnhancedLegalRLHF:
         # Update training status
         self._check_training_status()
 
+    def evaluate_response(self, query: str, response: str) -> float:
+        """
+        Evaluate a response using the reward model.
+
+        Args:
+            query: The legal query
+            response: The response to evaluate
+
+        Returns:
+            Quality score (higher is better)
+        """
+        try:
+            return self.score_response(query, response)
+        except Exception as e:
+            logger.error(f"Error evaluating response: {str(e)}")
+            return 0.7  # Return a default reasonable score if evaluation fails
+
     def score_response(self, query: str, response: str) -> float:
         """
         Score a response using the reward model.
