@@ -14,10 +14,6 @@ from typing import List, Dict, Any, Tuple, Set
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-
 class LegalQueryExpansion:
     """Expands queries with legal terminology for better retrieval."""
 
@@ -124,7 +120,8 @@ class LegalQueryExpansion:
         logger.info(f"Identified legal terms: {identified_terms}")
         return identified_terms
 
-    def identify_jurisdiction(self, query: str) -> str:
+    @staticmethod
+    def identify_jurisdiction(query: str) -> str:
         """
         Identify jurisdiction mentioned in the query.
 

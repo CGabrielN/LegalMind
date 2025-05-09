@@ -6,11 +6,11 @@ in legal responses, with a focus on verifying citations and claims against
 the retrieved context.
 """
 
-import re
-import yaml
 import logging
+import re
+from typing import List, Dict, Any, Tuple, Optional
+
 import numpy as np
-from typing import List, Dict, Any, Tuple, Optional, Set
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -18,9 +18,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class LegalHallucinationDetector:
     """
@@ -91,7 +88,8 @@ class LegalHallucinationDetector:
 
         return claims
 
-    def verify_citation(self, citation: str, context: str) -> Tuple[bool, float]:
+    @staticmethod
+    def verify_citation(citation: str, context: str) -> Tuple[bool, float]:
         """
         Verify if a citation exists in the context.
 
@@ -323,7 +321,8 @@ class LegalHallucinationDetector:
 
         return modified_response
 
-    def _get_cautious_replacement(self, pattern: str) -> str:
+    @staticmethod
+    def _get_cautious_replacement(pattern: str) -> str:
         """Get a cautious replacement for a definitive pattern."""
         replacements = {
             "always requires": "often requires",
@@ -408,7 +407,8 @@ class CitationVerifier:
             logger.warning(f"Error parsing citation '{citation}': {str(e)}")
             return {"original": citation}
 
-    def validate_citation_format(self, citation: str) -> bool:
+    @staticmethod
+    def validate_citation_format(citation: str) -> bool:
         """
         Validate if a citation follows the expected Australian format.
 
@@ -492,7 +492,7 @@ class CitationVerifier:
             # If at least one party name matches
             if len(case_parties) > 0 and len(ctx_parties) > 0:
                 if case_parties[0].lower() in ctx_parties[0].lower() or \
-                        (len(case_parties) > 1 and len(ctx_parties) > 1 and \
+                        (len(case_parties) > 1 and len(ctx_parties) > 1 and
                          case_parties[1].lower() in ctx_parties[1].lower()):
                     similar_citations.append(ctx_citation)
 
@@ -681,14 +681,13 @@ class HallucinationMitigation:
 
         logger.info("Initialized hallucination mitigation system")
 
-    def analyze_response(self, response: str, context: str, query: str = None) -> Dict[str, Any]:
+    def analyze_response(self, response: str, context: str) -> Dict[str, Any]:
         """
         Analyze a response for potential hallucinations.
 
         Args:
             response: Generated response
             context: Retrieved context
-            query: Optional query for additional context
 
         Returns:
             Comprehensive analysis results
@@ -741,7 +740,8 @@ class HallucinationMitigation:
         logger.info(f"Analysis complete - Hallucination severity: {results['hallucination_severity']}")
         return results
 
-    def _calculate_severity(self, hallucination_results: Dict[str, Any], jurisdiction_results: Dict[str, Any]) -> str:
+    @staticmethod
+    def _calculate_severity(hallucination_results: Dict[str, Any], jurisdiction_results: Dict[str, Any]) -> str:
         """Calculate the severity of hallucinations."""
         # Count unverified citations and claims
         unverified_citations = sum(1 for check in hallucination_results["citation_checks"] if not check["verified"])

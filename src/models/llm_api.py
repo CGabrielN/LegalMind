@@ -5,35 +5,31 @@ This module handles the interaction with LM Studio's local API
 for text generation using retrieved context.
 """
 
-import os
-import yaml
 import json
 import logging
+from typing import Dict, Any, Optional, Generator
+
 import requests
-from typing import List, Dict, Any, Optional, Generator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-with open(os.path.join(project_root, "config", "config.yaml"), "r") as f:
-    config = yaml.safe_load(f)
 
 class LMStudioAPI:
     """
     Handles interaction with LM Studio's local API for legal question answering.
     """
 
-    def __init__(self, api_base_url: Optional[str] = None):
+    def __init__(self, api_base_url: Optional[str] = None, config = None):
         """Initialize the API connection."""
         self.api_base_url = api_base_url or "http://127.0.0.1:1234/v1"
         self.completions_url = f"{self.api_base_url}/completions"
         self.chat_completions_url = f"{self.api_base_url}/chat/completions"
         self.model_name = "phi-4-mini-instruct"  # This is arbitrary as LM Studio uses the loaded model
-        self.temperature = config["llm"].get("temperature", 0.1)
-        self.max_tokens = config["llm"].get("max_new_tokens", 1024)
+        self.config = config
+        self.temperature = self.config["llm"].get("temperature", 0.1)
+        self.max_tokens = self.config["llm"].get("max_new_tokens", 1024)
 
         logger.info(f"Initialized LM Studio API connection to {self.api_base_url}")
 
@@ -55,7 +51,8 @@ class LMStudioAPI:
             logger.error("Please ensure LM Studio is running and the API is enabled.")
             raise ConnectionError(f"Failed to connect to LM Studio API at {self.api_base_url}")
 
-    def _create_prompt(self, query: str, context: str) -> Dict[str, Any]:
+    @staticmethod
+    def _create_prompt(query: str, context: str) -> Dict[str, Any]:
         """
         Create a prompt for the LLM based on the query and retrieved context.
 

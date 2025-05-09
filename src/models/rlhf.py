@@ -163,37 +163,13 @@ class LegalRewardModel:
             eval_steps=1000,
         )
 
-        # Define custom loss function
-        def compute_loss(model, inputs):
-            """Compute loss for preference learning."""
-            # Process chosen responses
-            chosen_outputs = model(
-                input_ids=inputs["chosen_input_ids"].to(self.device),
-                attention_mask=inputs["chosen_attention_mask"].to(self.device)
-            )
-
-            # Process rejected responses
-            rejected_outputs = model(
-                input_ids=inputs["rejected_input_ids"].to(self.device),
-                attention_mask=inputs["rejected_attention_mask"].to(self.device)
-            )
-
-            # Get logits
-            chosen_logits = chosen_outputs.logits
-            rejected_logits = rejected_outputs.logits
-
-            # Calculate preference loss
-            loss = -torch.log(torch.sigmoid(chosen_logits - rejected_logits)).mean()
-
-            return loss
-
         # Create trainer
         trainer = Trainer(
             model=self.model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_loss=compute_loss
+            compute_loss=self.compute_loss
         )
 
         # Train model
@@ -203,6 +179,30 @@ class LegalRewardModel:
         # Save model
         self.save_model(output_dir)
         logger.info("Reward model training complete")
+
+    # Define custom loss function
+    def compute_loss(self, model, inputs):
+        """Compute loss for preference learning."""
+        # Process chosen responses
+        chosen_outputs = model(
+            input_ids=inputs["chosen_input_ids"].to(self.device),
+            attention_mask=inputs["chosen_attention_mask"].to(self.device)
+        )
+
+        # Process rejected responses
+        rejected_outputs = model(
+            input_ids=inputs["rejected_input_ids"].to(self.device),
+            attention_mask=inputs["rejected_attention_mask"].to(self.device)
+        )
+
+        # Get logits
+        chosen_logits = chosen_outputs.logits
+        rejected_logits = rejected_outputs.logits
+
+        # Calculate preference loss
+        loss = -torch.log(torch.sigmoid(chosen_logits - rejected_logits)).mean()
+
+        return loss
 
 class LegalFeedbackCollector:
     """Collects and manages human feedback on legal responses."""
@@ -373,44 +373,3 @@ class LegalRLHF:
             )
 
         logger.info("Generated synthetic preference data")
-
-def create_preference_dataset():
-    """Create a basic preference dataset for the legal domain."""
-    import pandas as pd
-
-    # Directory for preference data
-    os.makedirs("data/feedback", exist_ok=True)
-
-    # Example preference pairs
-    preferences = []
-
-    # Example 1
-    preferences.append({
-        "query": "What constitutes negligence in Australian law?",
-        "chosen": "In Australian law, negligence has three key elements: a duty of care, breach of that duty, and resulting damage. For a duty of care to exist, harm must be reasonably foreseeable. In Donoghue v Stevenson [1932] AC 562, the court established the 'neighbor principle' which has been applied in Australian cases such as Jaensch v Coffey (1984) 155 CLR 549. The standard of care expected is that of a reasonable person in the defendant's position.",
-        "rejected": "Negligence in Australia means someone was careless. If someone is careless and hurts you, you can sue them. You need to prove they had a duty to be careful, they weren't careful, and you got hurt because of it. Courts look at whether a reasonable person would have acted differently.",
-        "feedback": "The chosen response includes specific legal citations and explains legal principles clearly"
-    })
-
-    # Example 2
-    preferences.append({
-        "query": "Explain the legal concept of adverse possession in Victoria.",
-        "chosen": "Adverse possession in Victoria allows a person to claim ownership of land they have possessed continuously for at least 15 years without the owner's permission, as established in the Limitations of Actions Act 1958 (Vic). The possession must be actual, open, notorious, exclusive, continuous, and hostile to the true owner's title. In Whittlesea City Council v Abbatangelo [2009] VSCA 188, the Victorian Court of Appeal clarified that the possessor must demonstrate an intention to possess the land to the exclusion of others, including the true owner.",
-        "rejected": "If you use someone else's land in Victoria for long enough, you can take it. You need to use it openly for many years. The government might let you claim it if the real owner doesn't complain. It's called adverse possession and happens a lot with boundary disputes between neighbors.",
-        "feedback": "The chosen response includes relevant statute, time period, and case law"
-    })
-
-    # Example 3
-    preferences.append({
-        "query": "What are the requirements for a valid will in Queensland?",
-        "chosen": "In Queensland, the requirements for a valid will are governed by the Succession Act 1981 (Qld). For a will to be valid, it must be: (1) in writing, (2) signed by the testator or by someone else in the testator's presence and at their direction, (3) the signature must be made with the intention of executing the will, (4) the signature must be witnessed by two or more witnesses present at the same time, and (5) at least two of the witnesses must attest and sign the will in the presence of the testator. As established in Banks v Goodfellow (1870) LR 5 QB 549, the testator must also have testamentary capacity, meaning they understand the nature and effect of making a will, the extent of their property, and the claims to which they should give effect.",
-        "rejected": "To make a valid will in Queensland, you need to write it down and sign it. You also need witnesses. The will should say who gets your stuff when you die. You need to be of sound mind when you make it. If you don't make a valid will, the government decides who gets your property.",
-        "feedback": "The chosen response cites specific legislation, lists requirements clearly, and mentions relevant case law"
-    })
-
-    # Save to JSON file
-    with open("data/feedback/preference_data.json", 'w') as f:
-        json.dump(preferences, f, indent=2)
-
-    logger.info(f"Created preference dataset with {len(preferences)} examples")
-    return "data/feedback/preference_data.json"

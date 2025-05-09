@@ -5,42 +5,40 @@ This module integrates all advanced RAG strategies (query expansion, multi-query
 and metadata-enhanced retrieval) into a unified retrieval system.
 """
 
-import yaml
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-
-from .basic_rag import BasicRAG
-from .query_expansion import LegalQueryExpansion
-from .multi_query_rag import MultiQueryRAG
-from .metadata_enhanced_rag import MetadataEnhancedRAG
+from typing import List, Dict, Any, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class AdvancedRAG:
     """
     Integrates multiple RAG strategies for comprehensive legal retrieval.
     """
 
-    def __init__(self):
+    def __init__(self, resource_manager = None):
         """Initialize the advanced RAG system."""
+        if resource_manager is None:
+            from src.core.resource_manager import ResourceManager
+            resource_manager = ResourceManager()
+        self.resource_manager = resource_manager
+        self.config = self.resource_manager.config
+
         # Initialize component RAG strategies
-        self.basic_rag = BasicRAG()
-        self.query_expansion = LegalQueryExpansion()
-        self.multi_query_rag = MultiQueryRAG()
-        self.metadata_enhanced_rag = MetadataEnhancedRAG()
+        self.basic_rag = self.resource_manager.basic_rag
+        self.query_expansion = self.resource_manager.query_expander
+        self.multi_query_rag = self.resource_manager.multi_query_rag
+        self.metadata_enhanced_rag = self.resource_manager.metadata_enhanced_rag
 
+        #TODO: this should all be enabled by default, just choose which one should be used
         # Configure which strategies are enabled
-        self.use_query_expansion = config["rag"]["query_expansion"]["enabled"]
-        self.use_multi_query = config["rag"]["multi_query"]["enabled"]
-        self.use_metadata_enhanced = config["rag"]["metadata_enhanced"]["enabled"]
+        self.use_query_expansion = self.config["rag"]["query_expansion"]["enabled"]
+        self.use_multi_query = self.config["rag"]["multi_query"]["enabled"]
+        self.use_metadata_enhanced = self.config["rag"]["metadata_enhanced"]["enabled"]
 
-        self.top_k = config["rag"]["advanced"]["top_k"]
+        self.top_k = self.config["rag"]["advanced"]["top_k"]
 
         logger.info("Initialized Advanced RAG system")
         logger.info(f"Query Expansion enabled: {self.use_query_expansion}")

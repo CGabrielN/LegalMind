@@ -5,29 +5,28 @@ This module implements metadata-based filtering for legal document retrieval,
 allowing users to filter by jurisdiction, document type, and other metadata.
 """
 
-import yaml
 import logging
 import re
 from typing import List, Dict, Any, Optional, Set, Tuple
-
-from ..vectordb.chroma_db import ChromaVectorStore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class MetadataFilter:
     """
     Handles metadata-based filtering for legal document retrieval.
     """
 
-    def __init__(self):
+    def __init__(self, resource_manager=None):
         """Initialize the metadata filter."""
-        self.vector_store = ChromaVectorStore()
+        if resource_manager is None:
+            from src.core.resource_manager import ResourceManager
+            resource_manager = ResourceManager()
+        self.resource_manager = resource_manager
+        self.config = resource_manager.config
+        self.vector_store = resource_manager.vector_store
 
         # Australian jurisdictions
         self.jurisdictions = {
@@ -162,7 +161,8 @@ class MetadataFilter:
         else:
             return set()
 
-    def filter_query(self, query: str, explicit_filters: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    def filter_query(self, query: str, explicit_filters: Optional[Dict[str, Any]] = None) -> Tuple[
+        List[Dict[str, Any]], Dict[str, Any]]:
         """
         Perform a filtered query using metadata.
 
@@ -180,7 +180,7 @@ class MetadataFilter:
         results = self.vector_store.metadata_filter_query(
             query_text=query,
             filters=filters,
-            n_results=config["rag"]["basic"]["top_k"]
+            n_results=self.config["rag"]["basic"]["top_k"]
         )
 
         # Format the results
