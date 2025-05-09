@@ -458,11 +458,10 @@ class LegalMindUI:
         if not self.pipeline_available or not self.response_pipeline:
             return
 
-        # Use enhanced RLHF if available
-        if hasattr(self.response_pipeline, "rlhf") and hasattr(self.response_pipeline.rlhf,
-                                                               "collect_like_dislike_feedback"):
+        # Use RLHF if available
+        if hasattr(self.response_pipeline, "rlhf") and self.response_pipeline.rlhf is not None:
             try:
-                # Use the enhanced feedback collection
+                # Use the feedback collection
                 self.response_pipeline.rlhf.collect_like_dislike_feedback(
                     query=query,
                     response=response,
@@ -471,32 +470,7 @@ class LegalMindUI:
                 logger.info(f"Collected {'positive' if is_positive else 'negative'} feedback for response")
                 return
             except Exception as e:
-                logger.error(f"Error collecting enhanced feedback: {str(e)}")
-                # Fall back to basic method
-
-        # Fallback to basic feedback collection
-        feedback_text = "Positive user feedback" if is_positive else "Negative user feedback"
-
-        if is_positive:
-            # For positive feedback, the current response is chosen
-            rejected = "This is a basic response without detail or citations."
-            self.response_pipeline.collect_feedback(
-                query,
-                [response, rejected],
-                chosen_idx=0,
-                feedback_text=feedback_text
-            )
-        else:
-            # For negative feedback, a better option is chosen
-            chosen = "I apologize, but I need more specific information to provide an accurate response about Australian law. Could you please provide more details about your legal question?"
-            self.response_pipeline.collect_feedback(
-                query,
-                [chosen, response],
-                chosen_idx=0,
-                feedback_text=feedback_text
-            )
-
-        logger.info(f"Collected {'positive' if is_positive else 'negative'} feedback using basic method")
+                logger.error(f"Error collecting feedback: {str(e)}")
 
     def _display_retrieved_docs(self, documents: List[Dict[str, Any]]):
         """Display the retrieved documents."""
@@ -726,9 +700,8 @@ class LegalMindUI:
                 thinking_placeholder.markdown("Analyzing response for accuracy...")
 
                 try:
-                    # Try to use enhanced RLHF to improve response if available
-                    if hasattr(self.response_pipeline, "rlhf") and hasattr(self.response_pipeline.rlhf,
-                                                                           "create_better_response"):
+                    # Try to use RLHF to improve response if available
+                    if hasattr(self.response_pipeline, "rlhf") and self.response_pipeline.rlhf is not None:
                         try:
                             # Use RLHF to potentially improve the response
                             thinking_placeholder.markdown("Using RLHF feedback to enhance response...")

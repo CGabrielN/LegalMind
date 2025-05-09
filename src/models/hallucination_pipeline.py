@@ -36,11 +36,7 @@ class LegalResponsePipeline:
         # Initialize RLHF system if enabled
         self.rlhf_enabled = self.config["rlhf"]["enabled"]
         if self.rlhf_enabled:
-            try:
-                from .enhanced_rlhf import EnhancedLegalRLHF as LegalRLHF
-            except ImportError:
-                from .rlhf import LegalRLHF
-
+            from .rlhf import LegalRLHF
             self.rlhf = LegalRLHF(self.config)
         else:
             self.rlhf = None

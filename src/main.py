@@ -98,15 +98,27 @@ def initialize_rlhf():
 
     try:
         from src.models.hallucination_pipeline import LegalResponsePipeline
+        from src.models.rlhf import LegalRLHF
 
         # Initialize the pipeline
         pipeline = LegalResponsePipeline()
-        pipeline.initialize_pipeline(seed_preferences=True)
 
-        logger.info("RLHF system initialized successfully")
+        # Initialize RLHF with synthetic preferences if enabled
+        if hasattr(pipeline, "rlhf") and pipeline.rlhf is not None:
+            logger.info("Initializing RLHF with synthetic preferences")
+            success = pipeline.rlhf.initialize_with_synthetic_preferences(num_examples=50)
+            if success:
+                logger.info("Successfully initialized RLHF system with synthetic preferences")
+            else:
+                logger.warning("Failed to initialize RLHF with synthetic preferences")
+        else:
+            logger.warning("RLHF not enabled in pipeline")
+
+        logger.info("RLHF system initialization complete")
+        return True
     except Exception as e:
         logger.error(f"RLHF initialization failed: {str(e)}")
-        sys.exit(1)
+        return False
 
 
 def run_full_pipeline():
@@ -164,8 +176,7 @@ def main():
 
         # If no operation specified, show help
         if not any([args.download, args.process, args.evaluate, args.ui,
-                    args.init_rlhf, args.init_citations, args.test_hallucination,
-                    args.train_rlhf, args.version]):
+                    args.init_rlhf]):
             parser.print_help()
             sys.exit(0)
 
