@@ -39,7 +39,7 @@ class LMStudioAPI:
     def _test_connection(self):
         """Test the connection to the LM Studio API."""
         try:
-            response = requests.get(self.api_base_url)
+            response = requests.get(self.api_base_url + "/models")
             if response.status_code == 404:
                 # This is actually expected - the root endpoint doesn't exist
                 # but tells us the server is running
