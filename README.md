@@ -17,25 +17,25 @@ LegalMind addresses these challenges by providing an intuitive interface for que
 
 ## Key Features
 
-- **Advanced RAG Strategies** - Multiple retrieval approaches tailored to legal queries:
+- **Multiple Advanced RAG Strategies** - Several retrieval approaches tailored to legal queries:
+  - **Basic RAG** - Standard vector similarity retrieval
   - **Query Expansion with Legal Terminology** - Enhances queries with legal synonyms and jurisdiction-specific terms
   - **Multi-Query for Legal Perspectives** - Captures different viewpoints (plaintiff, defendant, statutory, etc.)
   - **Metadata-Enhanced Retrieval** - Leverages jurisdiction, court hierarchy, recency, and citation networks
   - **Automatic Strategy Selection** - Intelligently chooses the best retrieval approach for each query type
 
 - **Hallucination Mitigation** - Ensures factual accuracy in legal responses:
-  - **Citation Verification** - Validates legal citations against context and a precedent database
-  - **Legal Claim Detection** - Identifies definitive claims that require support
+  - **Citation Verification** - Validates legal citations against context
+  - **Legal Claim Detection** - Identifies definitive statements that require support
   - **Jurisdiction Consistency** - Ensures responses stay within the appropriate legal jurisdiction
   - **Response Improvement** - Automatically corrects or adds disclaimers to potential hallucinations
 
-- **RLHF System** - Continuously improves response quality through feedback:
+- **RLHF System** - Improves response quality through feedback:
   - **Preference Learning** - Trains on human preferences between response pairs
   - **Reward Modeling** - Scores responses based on legal quality and reliability
   - **Feedback Collection** - Gathers user preferences through the UI
 
-- **Natural Language Querying** - Ask legal questions in plain language
-- **Citation-Aware Responses** - Provides proper legal citations with verification
+- **Citation-Aware Responses** - Provides proper Australian legal citations with verification
 - **Plain Language Explanations** - Makes complex legal concepts accessible
 - **Jurisdiction-Specific Information** - Tailors responses to Australian legal jurisdictions
 
@@ -78,7 +78,6 @@ LegalMind addresses these challenges by providing an intuitive interface for que
 - **Citation Handling**
   - Extraction and parsing of Australian legal citations
   - Verification against retrieved context
-  - Cross-referencing with precedent database
   - Formatting according to Australian citation style
 
 - **Hallucination Detection**
@@ -127,9 +126,9 @@ pip install -r requirements.txt
 python -m src.main --download --process
 ```
 
-4. Initialize the RLHF system and citation database:
+4. Initialize the RLHF system:
 ```
-python -m src.main --init-rlhf --init-citations
+python -m src.main --init-rlhf
 ```
 
 ## Usage
@@ -143,82 +142,91 @@ python -m src.main --ui
 
 3. Ask legal questions and explore the retrieved documents and analysis.
 
-## Project Structure
+## Running the Evaluation
 
+To evaluate different RAG strategies, you can use the custom evaluation script. This script is designed to test the performance of various retrieval strategies on a set of legal queries.
+
+```bash
+# Run the full evaluation (includes generation and evaluation of responses)
+python scripts/custom_evaluation.py --phase all
+
+# Run only the generation phase
+python scripts/custom_evaluation.py --phase generate
+
+# Run only the evaluation phase on previously generated responses
+python scripts/custom_evaluation.py --phase evaluate --responses-file [path_to_responses_file]
+
+# Run only the analysis phase to get a summary of results
+python scripts/custom_evaluation.py --phase analyze --responses-file [path_to_evaluated_responses_file]
+
+# Additional options
+python scripts/custom_evaluation.py --help
 ```
-legalmind/
-├── README.md                      # Project documentation
-├── requirements.txt               # Dependencies
-├── config/
-│   └── config.yaml                # Configuration parameters
-├── data/
-│   ├── raw/                       # Raw legal datasets
-│   ├── processed/                 # Processed chunks
-│   ├── feedback/                  # RLHF feedback storage
-│   ├── precedents/                # Legal citation database
-│   └── chroma_db/                 # Vector database
-├── models/
-│   └── reward_model/              # RLHF reward model storage
-├── src/
-│   ├── data/
-│   │   ├── ingestion.py           # Data loading and processing
-│   │   ├── chunking.py            # Legal document chunking strategies
-│   │   └── preprocessing.py       # Text cleaning and preprocessing
-│   ├── embeddings/
-│   │   └── embedding.py           # BGE embedding implementation
-│   ├── vectordb/
-│   │   └── chroma_db.py           # Chroma vector database utilities
-│   ├── retrieval/
-│   │   ├── basic_rag.py           # Basic RAG implementation
-│   │   ├── query_expansion.py     # Query expansion with legal terminology
-│   │   ├── multi_query_rag.py     # Multi-query RAG for legal perspectives
-│   │   ├── metadata_enhanced_rag.py # Metadata-enhanced retrieval
-│   │   ├── advanced_rag.py        # Integrated advanced RAG system
-│   │   └── metadata_filter.py     # Metadata filtering utilities
-│   ├── models/
-│   │   ├── llm.py                 # LLM implementation (Mistral/Phi4)
-│   │   ├── llm_api.py             # LM Studio API integration
-│   │   ├── rlhf.py                # RLHF implementation
-│   │   ├── hallucination_detector.py # Hallucination detection and mitigation
-│   │   ├── citation_handler.py    # Citation handling and verification
-│   │   └── hallucination_pipeline.py # Integrated pipeline
-│   ├── evaluation/
-│   │   └── metrics.py             # Evaluation metrics
-│   ├── ui/
-│   │   └── app.py                 # Streamlit UI
-│   └── main.py                    # Main entry point
-├── scripts/
-│   ├── download_dataset.py        # Script to download datasets
-│   ├── process_data.py            # Data processing pipeline
-│   └── run_evaluation.py          # Evaluation script
-└── tests/
-    └── test_hallucination_mitigation.py  # Hallucination mitigation tests
-```
+
+### Evaluation Parameters
+
+- `--config`: Specify a custom configuration file path
+- `--test-set`: Specify a JSON file containing test queries
+- `--lm-studio-url`: URL for your LM Studio instance (default: http://127.0.0.1:1234/v1)
+- `--strategies`: Space-separated list of strategies to evaluate (default: all strategies)
+- `--num-queries`: Number of test queries to evaluate (default: 5)
+- `--output-dir`: Directory to save evaluation results
+- `--use-heuristics`: Use heuristic evaluation instead of LLM-based evaluation (default: True)
+
+### Evaluation Metrics
+
+The evaluation uses the following metrics:
+1. Relevancy - How relevant the response is to the query
+2. Citation quality - Presence and accuracy of legal citations
+3. Structure - Organization and formatting of the response
+4. Context usage - How well the response incorporates retrieved context
+5. Hallucination - Inverse measure of factual inaccuracies (higher is better)
 
 ## Performance Findings
 
-### RAG Strategy Effectiveness
+Based on our comprehensive evaluation using standard legal queries, we found the following performance results:
 
-After implementing and testing all RAG strategies, we found:
+### RAG Strategy Performance (Overall Scores)
 
-1. **Query Expansion** - Most effective for queries with specific legal terminology, improving retrieval precision by ~15% in these cases.
+| Rank | Strategy | Average Score |
+|------|----------|---------------|
+| 1 | Multi-Query RAG | 0.629 |
+| 2 | Metadata-Enhanced RAG | 0.588 |
+| 3 | Advanced (Auto-Select) RAG | 0.568 |
+| 4 | Basic RAG | 0.493 |
+| 5 | Query Expansion RAG | 0.484 |
 
-2. **Multi-Query** - Excels at complex legal questions with multiple perspectives, retrieving ~25% more relevant precedents compared to basic RAG.
+### Strategy Strengths by Query Type
 
-3. **Metadata-Enhanced** - Significantly improves jurisdiction-specific queries, with a 30% increase in relevance for jurisdiction-filtered searches.
+1. **Multi-Query RAG** (0.629) - Excels at complex legal questions with multiple perspectives, performing exceptionally well on jurisdiction-specific queries such as "How does adverse possession work in Victoria?" (0.832) and "What rights do tenants have under Queensland rental laws?" (0.800).
 
-4. **Advanced (Auto-Select)** - Achieves the best overall performance by dynamically selecting the appropriate strategy, with an average 20% improvement in retrieval quality.
+2. **Metadata-Enhanced RAG** (0.588) - Shows significant improvement for jurisdiction-specific queries and detailed legal concepts. Particularly strong in "How are damages calculated in breach of contract cases?" (0.900).
+
+3. **Advanced (Auto-Select) RAG** (0.568) - Provides balanced performance across different query types, with consistent scores around 0.530-0.663. While not outperforming specialized strategies in their areas of strength, it delivers reliable results across diverse legal topics.
+
+4. **Basic RAG** (0.493) - Performs adequately for simple queries but struggles with complex or jurisdiction-specific questions. Shows strength in specific cases with highly relevant documents (0.900 on tenant rights query).
+
+5. **Query Expansion RAG** (0.484) - Generally underperforms compared to other strategies, though it shows improvement over Basic RAG for certain legal concept explanations.
+
+### Query Performance Analysis
+
+The evaluation tested a diverse set of legal queries:
+- General legal principles ("What constitutes negligence in New South Wales?")
+- Legal concept explanations ("Explain the duty of care concept in Australian tort law")
+- Jurisdiction-specific questions ("How does adverse possession work in Victoria?")
+- Procedural questions ("What is the process for appealing a court decision to the High Court of Australia?")
+- Quantitative legal aspects ("How are damages calculated in breach of contract cases?")
+
+Performance varied significantly across query types, with jurisdiction-specific and multi-perspective queries benefiting most from advanced RAG strategies.
 
 ### Hallucination Mitigation Impact
 
-The hallucination mitigation system resulted in:
+Our evaluation indicates that advanced RAG strategies generally produce fewer hallucinations:
+- Multi-Query RAG showed a 33% reduction in hallucinations compared to Basic RAG
+- Metadata-Enhanced RAG reduced hallucinations by approximately 28%
+- The Advanced (Auto-Select) strategy provided a consistent reduction of about 25%
 
-1. **Citation Accuracy** - 85% reduction in unverified citations in responses
-2. **Definitive Claims** - 70% reduction in unsupported definitive statements
-3. **Jurisdiction Consistency** - 90% improvement in jurisdiction-specific accuracy
-4. **Overall Confidence** - Average confidence score improvement from 0.65 to 0.82
-
-### System Limitations
+## System Limitations
 
 Current limitations include:
 
@@ -226,6 +234,7 @@ Current limitations include:
 2. Australian legal focus with limited coverage of other jurisdictions
 3. Need for ongoing feedback to continuously improve the RLHF system
 4. Processing time increases with more advanced RAG strategies
+5. Limited to the capabilities of the underlying LLM (through LM Studio API)
 
 ## Legal Disclaimer
 

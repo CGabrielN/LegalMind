@@ -5,35 +5,42 @@ This module implements a multi-query approach to capture different legal perspec
 in the same question by generating multiple query versions and combining results.
 """
 
-import yaml
 import logging
-import numpy as np
-from typing import List, Dict, Any, Set, Tuple
-from sklearn.metrics.pairwise import cosine_similarity
-
-from .query_expansion import LegalQueryExpansion
-from ..vectordb.chroma_db import ChromaVectorStore
-from ..embeddings.embedding import EmbeddingModel
+from typing import List, Dict, Any, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class MultiQueryRAG:
     """
     Implements a multi-query RAG strategy to capture different legal perspectives.
     """
 
-    def __init__(self):
-        """Initialize the multi-query RAG system."""
-        self.vector_store = ChromaVectorStore()
-        self.embedding_model = EmbeddingModel()
-        self.query_expander = LegalQueryExpansion()
-        self.top_k = config["rag"]["multi_query"]["top_k"]
+    def __init__(self, resource_manager=None):
+        """
+        Initialize the multi-query RAG system.
+
+        Args:
+            resource_manager: Shared ResourceManager instance
+        """
+
+        # Import here to avoid circular imports
+        if resource_manager is None:
+            from src.core.resource_manager import ResourceManager
+            resource_manager = ResourceManager()
+
+        self.resource_manager = resource_manager
+
+        # Access shared resources through the manager
+        self.vector_store = resource_manager.vector_store
+        self.embedding_model = resource_manager.embedding_model
+        self.query_expander = resource_manager.query_expander
+
+        # Load configuration
+        self.config = resource_manager.config
+        self.top_k = self.config["rag"]["multi_query"]["top_k"]
 
         logger.info("Initialized Multi-Query RAG system")
 
@@ -101,48 +108,36 @@ class MultiQueryRAG:
         # Generate query perspectives
         perspectives = self.generate_query_perspectives(query)
 
-        # Results storage
-        all_results = []
-        doc_ids = set()  # Track seen document IDs to avoid duplicates
+        # Results storage for each perspective
+        perspective_results = []
 
         # Retrieve documents for each perspective
         for perspective in perspectives:
-            # Embed the perspective query
-            query_embedding = self.embedding_model.embed_text(perspective)
-
             # Query the vector store
             results = self.vector_store.query(perspective, n_results=self.top_k)
 
             # Process results
+            documents = []
             for i in range(len(results["documents"][0])):
-                doc_id = results["ids"][0][i] if results["ids"][0] else f"doc_{i}"
-
-                # Skip if we've already seen this document
-                if doc_id in doc_ids:
-                    continue
-
-                doc_ids.add(doc_id)
-
                 document = {
                     "text": results["documents"][0][i],
                     "metadata": results["metadatas"][0][i] if results["metadatas"][0] else {},
-                    "id": doc_id,
+                    "id": results["ids"][0][i] if results["ids"][0] else f"doc_{i}",
                     "score": 1.0 - results["distances"][0][i] if results["distances"][0] else 0.0,
                     "perspective": perspective
                 }
+                documents.append(document)
 
-                all_results.append(document)
+            perspective_results.append(documents)
 
-        # Sort by similarity score
-        all_results.sort(key=lambda x: x["score"], reverse=True)
+        # Use the combine_results method to merge and deduplicate results
+        combined_results = self.combine_results(perspective_results, perspectives)
 
-        # Limit to top_k unique results
-        top_results = all_results[:self.top_k]
+        logger.info(f"Retrieved {len(combined_results)} unique documents using {len(perspectives)} query perspectives")
+        return combined_results
 
-        logger.info(f"Retrieved {len(top_results)} unique documents using {len(perspectives)} query perspectives")
-        return top_results
-
-    def prepare_context(self, documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
+    @staticmethod
+    def prepare_context(documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
         """
         Prepare retrieved documents as context for the LLM.
 
@@ -168,7 +163,7 @@ class MultiQueryRAG:
                 break
 
             # Format document with metadata
-            doc_context = f"Document {i+1}:\n"
+            doc_context = f"Document {i + 1}:\n"
 
             # Add any citation information
             if "citation" in doc["metadata"]:
@@ -217,7 +212,8 @@ class MultiQueryRAG:
 
         return context, documents
 
-    def combine_results(self, query_results: List[List[Dict[str, Any]]], perspectives: List[str]) -> List[Dict[str, Any]]:
+    def combine_results(self, query_results: List[List[Dict[str, Any]]], perspectives: List[str]) -> List[
+        Dict[str, Any]]:
         """
         Combine and deduplicate results from multiple queries.
 
@@ -254,5 +250,6 @@ class MultiQueryRAG:
         # Limit to top_k unique results
         top_results = combined_results[:self.top_k]
 
-        logger.info(f"Combined {sum(len(results) for results in query_results)} documents into {len(top_results)} unique documents")
+        logger.info(
+            f"Combined {sum(len(results) for results in query_results)} documents into {len(top_results)} unique documents")
         return top_results

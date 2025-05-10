@@ -48,7 +48,7 @@ def main():
         return
 
     try:
-        embedding_model = EmbeddingModel()
+        embedding_model = EmbeddingModel(config)
     except Exception as e:
         logger.error(f"Error initializing embedding model: {str(e)}")
         logger.warning("Continuing without embedding model. Some functionality will be limited.")

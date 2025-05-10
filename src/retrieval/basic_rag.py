@@ -5,31 +5,39 @@ This module implements the basic RAG (Retrieval Augmented Generation) pipeline
 for the LegalMind system.
 """
 
-import yaml
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-
-from ..vectordb.chroma_db import ChromaVectorStore
-from ..embeddings.embedding import EmbeddingModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class BasicRAG:
     """
     Implements basic Retrieval Augmented Generation for legal queries.
     """
 
-    def __init__(self):
-        """Initialize the basic RAG system."""
-        self.vector_store = ChromaVectorStore()
-        self.embedding_model = EmbeddingModel()
-        self.top_k = config["rag"]["basic"]["top_k"]
+    def __init__(self, resource_manager=None):
+        """
+        Initialize the basic RAG system.
+
+        Args:
+            resource_manager: Shared ResourceManager instance
+        """
+        if resource_manager is None:
+            from src.core.resource_manager import ResourceManager
+            resource_manager = ResourceManager()
+
+        self.resource_manager = resource_manager
+
+        # Access shared resources through the manager
+        self.vector_store = resource_manager.vector_store
+        self.embedding_model = resource_manager.embedding_model
+
+        # Load configuration
+        self.config = resource_manager.config
+        self.top_k = self.config["rag"]["basic"]["top_k"]
 
         logger.info("Initialized Basic RAG system")
 
@@ -68,7 +76,8 @@ class BasicRAG:
 
         return documents
 
-    def prepare_context(self, documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
+    @staticmethod
+    def prepare_context(documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
         """
         Prepare retrieved documents as context for the LLM.
 
@@ -94,7 +103,7 @@ class BasicRAG:
                 break
 
             # Format document with metadata
-            doc_context = f"Document {i+1}:\n"
+            doc_context = f"Document {i + 1}:\n"
 
             # Add any citation information
             if "citation" in doc["metadata"]:

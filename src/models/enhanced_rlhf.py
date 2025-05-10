@@ -5,18 +5,15 @@ This module enhances the RLHF capabilities with specific focus on legal accuracy
 It builds on the base RLHF implementation with improved feedback collection and training.
 """
 
-import os
-import yaml
 import json
-import torch
 import logging
-import numpy as np
-import pandas as pd
+import os
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-from pathlib import Path
-from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader
+from typing import List, Dict, Any, Optional
+
+import numpy as np
+import torch
+from torch.utils.data import Dataset
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -28,9 +25,6 @@ from transformers import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class LegalFeedbackItem:
     """Represents a single feedback item for legal responses."""
@@ -64,6 +58,7 @@ class LegalFeedbackItem:
         )
         item.timestamp = data.get("timestamp", datetime.now().isoformat())
         return item
+
 
 class EnhancedLegalRewardModel:
     """Enhanced reward model for evaluating legal response quality with improved training."""
@@ -164,21 +159,21 @@ class EnhancedLegalRewardModel:
         try:
             # Create a prompt instructing the model to improve the response
             improvement_prompt = f"""
-You provided this response to a legal query, but it could be improved:
-
-QUERY: {query}
-
-YOUR RESPONSE:
-{initial_response}
-
-Please provide an improved response that:
-1. Includes more accurate legal citations
-2. Is more precise in legal terminology
-3. Clearly distinguishes between jurisdictions
-4. Avoids definitive statements without support
-
-IMPROVED RESPONSE:
-"""
+                You provided this response to a legal query, but it could be improved:
+                
+                QUERY: {query}
+                
+                YOUR RESPONSE:
+                {initial_response}
+                
+                Please provide an improved response that:
+                1. Includes more accurate legal citations
+                2. Is more precise in legal terminology
+                3. Clearly distinguishes between jurisdictions
+                4. Avoids definitive statements without support
+                
+                IMPROVED RESPONSE:
+                """
 
             # Generate a new response using the improvement prompt and context
             logger.info("Attempting to generate improved response")
@@ -228,36 +223,13 @@ IMPROVED RESPONSE:
             remove_unused_columns=False,
         )
 
-        # Define custom loss function for preference learning
-        def compute_loss(model, inputs):
-            """Compute loss for preference learning."""
-            # Process chosen responses
-            chosen_outputs = model(
-                input_ids=inputs["chosen_input_ids"].to(self.device),
-                attention_mask=inputs["chosen_attention_mask"].to(self.device)
-            )
-
-            # Process rejected responses
-            rejected_outputs = model(
-                input_ids=inputs["rejected_input_ids"].to(self.device),
-                attention_mask=inputs["rejected_attention_mask"].to(self.device)
-            )
-
-            # Get logits
-            chosen_logits = chosen_outputs.logits
-            rejected_logits = rejected_outputs.logits
-
-            # Calculate preference loss (log sigmoid of the difference)
-            loss = -torch.log(torch.sigmoid(chosen_logits - rejected_logits)).mean()
-
-            return loss
 
         # Create trainer
         trainer = Trainer(
             model=self.model,
             args=training_args,
             train_dataset=preference_dataset,
-            compute_loss=compute_loss
+            compute_loss=self.compute_loss
         )
 
         # Train model
@@ -269,6 +241,32 @@ IMPROVED RESPONSE:
         logger.info("Reward model training complete")
 
         return True
+
+    # Define custom loss function for preference learning
+    def compute_loss(self, model, inputs):
+        """Compute loss for preference learning."""
+        # Process chosen responses
+        chosen_outputs = model(
+            input_ids=inputs["chosen_input_ids"].to(self.device),
+            attention_mask=inputs["chosen_attention_mask"].to(self.device)
+        )
+
+        # Process rejected responses
+        rejected_outputs = model(
+            input_ids=inputs["rejected_input_ids"].to(self.device),
+            attention_mask=inputs["rejected_attention_mask"].to(self.device)
+        )
+
+        # Get logits
+        chosen_logits = chosen_outputs.logits
+        rejected_logits = rejected_outputs.logits
+
+        # Calculate preference loss (log sigmoid of the difference)
+        loss = -torch.log(torch.sigmoid(chosen_logits - rejected_logits)).mean()
+
+        return loss
+
+
 
 class EnhancedLegalPreferenceDataset(Dataset):
     """Enhanced dataset for training a preference model on legal responses."""
@@ -320,6 +318,7 @@ class EnhancedLegalPreferenceDataset(Dataset):
             "rejected_attention_mask": rejected_tokens["attention_mask"].squeeze(),
         }
 
+
 class EnhancedLegalFeedbackCollector:
     """Enhanced feedback collection for legal responses with like/dislike integration."""
 
@@ -338,7 +337,8 @@ class EnhancedLegalFeedbackCollector:
         self.raw_feedback = self._load_raw_feedback()
         self.preference_pairs = self._load_preference_pairs()
 
-        logger.info(f"Initialized enhanced feedback collector with {len(self.raw_feedback)} items and {len(self.preference_pairs)} preference pairs")
+        logger.info(
+            f"Initialized enhanced feedback collector with {len(self.raw_feedback)} items and {len(self.preference_pairs)} preference pairs")
 
     def _load_raw_feedback(self) -> List[Dict[str, Any]]:
         """Load raw feedback items."""
@@ -372,7 +372,8 @@ class EnhancedLegalFeedbackCollector:
         with open(self.preference_pairs_file, 'w') as f:
             json.dump(self.preference_pairs, f, indent=2)
 
-    def collect_like_dislike_feedback(self, query: str, response: str, is_positive: bool, feedback_text: Optional[str] = None):
+    def collect_like_dislike_feedback(self, query: str, response: str, is_positive: bool,
+                                      feedback_text: Optional[str] = None):
         """
         Collect like/dislike feedback on a response.
 
@@ -503,19 +504,21 @@ class EnhancedLegalFeedbackCollector:
             "total_pairs": len(self.preference_pairs)
         }
 
+
 class EnhancedLegalRLHF:
     """Enhanced RLHF system for legal responses with like/dislike feedback."""
 
-    def __init__(self):
+    def __init__(self, config= None):
         """Initialize RLHF system."""
         # Initialize feedback collector
+        self.config = config
         self.feedback_collector = EnhancedLegalFeedbackCollector()
 
         # Initialize reward model
         self.reward_model = EnhancedLegalRewardModel()
 
         # Configuration
-        self.min_preference_pairs = config.get("rlhf", {}).get("feedback", {}).get("min_preference_pairs", 30)
+        self.min_preference_pairs = self.config.get("rlhf", {}).get("feedback", {}).get("min_preference_pairs", 30)
         self.pending_training = False
 
         # Check if we have enough data to train
@@ -535,7 +538,8 @@ class EnhancedLegalRLHF:
             self.pending_training = False
             logger.info(f"Need more preference pairs for training ({stats['total_pairs']}/{self.min_preference_pairs})")
 
-    def collect_like_dislike_feedback(self, query: str, response: str, is_positive: bool, feedback_text: Optional[str] = None):
+    def collect_like_dislike_feedback(self, query: str, response: str, is_positive: bool,
+                                      feedback_text: Optional[str] = None):
         """
         Collect like/dislike feedback.
 
@@ -555,6 +559,23 @@ class EnhancedLegalRLHF:
 
         # Update training status
         self._check_training_status()
+
+    def evaluate_response(self, query: str, response: str) -> float:
+        """
+        Evaluate a response using the reward model.
+
+        Args:
+            query: The legal query
+            response: The response to evaluate
+
+        Returns:
+            Quality score (higher is better)
+        """
+        try:
+            return self.score_response(query, response)
+        except Exception as e:
+            logger.error(f"Error evaluating response: {str(e)}")
+            return 0.7  # Return a default reasonable score if evaluation fails
 
     def score_response(self, query: str, response: str) -> float:
         """

@@ -6,105 +6,87 @@ with support for advanced features including RAG strategies and
 hallucination mitigation.
 """
 
-import os
-import yaml
 import logging
 import sys
-import streamlit as st
 from pathlib import Path
 from typing import List, Dict, Any
+
+import streamlit as st
 
 # Add project root to path to import project modules
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 # Now use absolute imports
-from src.retrieval.basic_rag import BasicRAG
-from src.retrieval.query_expansion import LegalQueryExpansion
-from src.retrieval.multi_query_rag import MultiQueryRAG
-from src.retrieval.metadata_enhanced_rag import MetadataEnhancedRAG
-from src.retrieval.advanced_rag import AdvancedRAG
 from src.retrieval.metadata_filter import MetadataFilter
-from src.models.llm_api import LMStudioAPI
-from src.vectordb.chroma_db import ChromaVectorStore
-from src.models.hallucination_pipeline import LegalResponsePipeline
+
+# Import resource manager
+from src.core.resource_manager import ResourceManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-config_path = project_root / "config" / "config.yaml"
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
-
-# Set page title and icon
-st.set_page_config(
-    page_title=config["ui"]["title"],
-    page_icon="⚖️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Add custom CSS for better UI elements
-st.markdown("""
-<style>
-    /* Enhance button visibility */
-    .feedback-button {
-        margin: 5px;
-        padding: 5px 10px;
-        border-radius: 5px;
-        background-color: #f0f0f0;
-        display: inline-block;
-    }
-    .feedback-button:hover {
-        background-color: #e0e0e0;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 class LegalMindUI:
     """
     Streamlit UI for the LegalMind legal assistant.
     """
 
-    def __init__(self):
-        """Initialize the UI components."""
-        # Initialize RAG systems
-        self.basic_rag = BasicRAG()
-        self.query_expansion = LegalQueryExpansion()
-        self.multi_query_rag = MultiQueryRAG()
-        self.metadata_enhanced_rag = MetadataEnhancedRAG()
-        self.advanced_rag = AdvancedRAG()
+    def __init__(self, resource_manager=None):
+        """
+        Initialize the UI components.
 
-        # Initialize metadata filter
+        Args:
+            resource_manager: Shared ResourceManager instance
+        """
+
+        # Use provided resource manager or create a new one
+        self.resource_manager = resource_manager or ResourceManager()
+
+        # Load config from resource manager
+        self.config = self.resource_manager.config
+
+        # Set page title and icon
+        st.set_page_config(
+            page_title=self.config["ui"]["title"],
+            page_icon="⚖️",
+            layout="wide",
+            initial_sidebar_state="expanded"
+        )
+
+        # Add custom CSS for better UI elements
+        st.markdown("""
+        <style>
+            /* Enhance button visibility */
+            .feedback-button {
+                margin: 5px;
+                padding: 5px 10px;
+                border-radius: 5px;
+                background-color: #f0f0f0;
+                display: inline-block;
+            }
+            .feedback-button:hover {
+                background-color: #e0e0e0;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        self.basic_rag = self.resource_manager.basic_rag
+        self.multi_query_rag = self.resource_manager.multi_query_rag
+
+        self.metadata_enhanced_rag = self.resource_manager.metadata_enhanced_rag
+        self.advanced_rag = self.resource_manager.advanced_rag
         self.metadata_filter = MetadataFilter()
 
-        # Initialize LM Studio API connection
-        try:
-            # Get LM Studio API URL from config or use default
-            lm_studio_url = config.get("lm_studio", {}).get("api_base_url", "http://127.0.0.1:1234/v1")
-            self.llm = LMStudioAPI(api_base_url=lm_studio_url)
-            self.llm_available = True
-            st.success(f"Successfully connected to LM Studio API at {lm_studio_url}")
-        except Exception as e:
-            st.error(f"Error connecting to LM Studio API: {str(e)}")
-            st.warning("Make sure LM Studio is running with a model loaded. Running in retrieval-only mode.")
-            self.llm = None
-            self.llm_available = False
+        # Access shared resources directly
+        self.query_expander = self.resource_manager.query_expander
+        self.vector_store = self.resource_manager.vector_store
+        self.llm = self.resource_manager.llm
+        self.llm_available = self.llm is not None
 
-        # Initialize vector store
-        self.vector_store = ChromaVectorStore()
-
-        # Initialize hallucination pipeline
-        try:
-            self.response_pipeline = LegalResponsePipeline()
-            self.pipeline_available = True
-            logger.info("Initialized hallucination pipeline")
-        except Exception as e:
-            logger.error(f"Error initializing hallucination pipeline: {str(e)}")
-            self.response_pipeline = None
-            self.pipeline_available = False
+        # Access response pipeline
+        self.response_pipeline = self.resource_manager.legal_response_pipeline
+        self.pipeline_available = self.response_pipeline is not None
 
         # Set up session state
         if "messages" not in st.session_state:
@@ -120,7 +102,7 @@ class LegalMindUI:
             st.session_state.response_analysis = None
 
         if "show_confidence" not in st.session_state:
-            st.session_state.show_confidence = config["ui"]["features"]["confidence_display"]
+            st.session_state.show_confidence = self.config["ui"]["features"]["confidence_display"]
 
         if "feedback_submitted" not in st.session_state:
             st.session_state.feedback_submitted = {}  # Track feedback by message index
@@ -132,10 +114,10 @@ class LegalMindUI:
             st.session_state.rag_explanation = None
 
         if "hallucination_mitigation_enabled" not in st.session_state:
-            st.session_state.hallucination_mitigation_enabled = config["hallucination"]["enabled"]
+            st.session_state.hallucination_mitigation_enabled = self.config["hallucination"]["enabled"]
 
         if "show_rag_explanation" not in st.session_state:
-            st.session_state.show_rag_explanation = config["ui"]["features"].get("rag_strategy_display", False)
+            st.session_state.show_rag_explanation = self.config["ui"]["features"].get("rag_strategy_display", False)
 
         if "top_k_value" not in st.session_state:
             st.session_state.top_k_value = 5
@@ -152,7 +134,15 @@ class LegalMindUI:
 
         logger.info("Initialized LegalMind UI")
 
-    def _format_document_preview(self, document: Dict[str, Any]) -> str:
+        # Check LM Studio API connection
+        if self.llm_available:
+            st.success(f"Successfully connected to LM Studio API")
+        else:
+            st.error("Error connecting to LM Studio API")
+            st.warning("Make sure LM Studio is running with a model loaded. Running in retrieval-only mode.")
+
+    @staticmethod
+    def _format_document_preview(document: Dict[str, Any]) -> str:
         """Format a document for display in the UI."""
         preview = document["text"]
 
@@ -184,12 +174,10 @@ class LegalMindUI:
 
     def _get_jurisdictions(self) -> List[str]:
         """Get available jurisdictions for filtering."""
-        # Get values from metadata filter
         return sorted(list(self.metadata_filter.get_available_metadata_values("jurisdiction")))
 
     def _get_document_types(self) -> List[str]:
         """Get available document types for filtering."""
-        # Get values from metadata filter
         return sorted(list(self.metadata_filter.get_available_metadata_values("document_type")))
 
     def _display_sidebar(self):
@@ -268,7 +256,6 @@ class LegalMindUI:
 
         # Year range filter
         st.sidebar.subheader("Year Range")
-        years = list(range(1900, 2025))
         year_range = st.sidebar.slider(
             "Select Year Range",
             min_value=1900,
@@ -383,23 +370,8 @@ class LegalMindUI:
             "qualified legal professional for advice specific to your situation."
         )
 
-    def _display_response(self, msg_idx, message):
-        """
-        Display a response with feedback buttons.
-
-        Args:
-            msg_idx: Message index in the conversation
-            message: The message dictionary
-        """
-        # Generate a unique key for this response
-        response_key = f"msg_{msg_idx}"
-
-        # Get the response content
-        response_content = message["content"]
-
-        # Display response content
-        st.markdown(response_content)
-
+    @staticmethod
+    def display_confidence_score(message):
         # Display confidence score if available and enabled
         if "confidence" in message and st.session_state.show_confidence:
             confidence = message["confidence"]
@@ -413,67 +385,9 @@ class LegalMindUI:
             else:
                 confidence_color = "red"
 
-            st.markdown(f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>", unsafe_allow_html=True)
-
-        # Show feedback section
-        feedback_container = st.container()
-        with feedback_container:
-            # Check if feedback was already submitted
-            if response_key in st.session_state.feedback_submitted:
-                # Show feedback status
-                feedback = st.session_state.feedback_submitted[response_key]
-                if feedback == "liked":
-                    st.markdown("✅ You liked this response")
-                elif feedback == "disliked":
-                    st.markdown("❌ You disliked this response")
-            else:
-                # Create feedback buttons
-                cols = st.columns([1, 1, 10])
-
-                # Function to handle like button click
-                def on_like_click():
-                    if self.pipeline_available and self.response_pipeline:
-                        self._handle_feedback(
-                            message.get("query", ""),
-                            response_content,
-                            True
-                        )
-                        st.session_state.feedback_submitted[response_key] = "liked"
-
-                        # Check if we should trigger RLHF training
-                        if self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
-                            try:
-                                if self.response_pipeline.rlhf.pending_training:
-                                    st.session_state.rlhf_training_pending = True
-                            except:
-                                pass
-
-                # Function to handle dislike button click
-                def on_dislike_click():
-                    if self.pipeline_available and self.response_pipeline:
-                        self._handle_feedback(
-                            message.get("query", ""),
-                            response_content,
-                            False
-                        )
-                        st.session_state.feedback_submitted[response_key] = "disliked"
-
-                        # Check if we should trigger RLHF training
-                        if self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
-                            try:
-                                if self.response_pipeline.rlhf.pending_training:
-                                    st.session_state.rlhf_training_pending = True
-                            except:
-                                pass
-
-                # Add the buttons with callbacks
-                with cols[0]:
-                    if st.button("👍", key=f"like_{response_key}", on_click=on_like_click):
-                        pass  # The actual action happens in the on_click function
-
-                with cols[1]:
-                    if st.button("👎", key=f"dislike_{response_key}", on_click=on_dislike_click):
-                        pass  # The actual action happens in the on_click function
+            st.markdown(
+                f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>",
+                unsafe_allow_html=True)
 
     def _display_messages(self):
         """Display the conversation history with feedback buttons."""
@@ -492,23 +406,10 @@ class LegalMindUI:
                     # Generate a unique key for this response
                     feedback_key = f"msg_{i}"
 
-                    # Display confidence score if available and enabled
-                    if "confidence" in message and st.session_state.show_confidence:
-                        confidence = message["confidence"]
-                        confidence_pct = int(confidence * 100)
-
-                        # Choose color based on confidence level
-                        if confidence >= 0.8:
-                            confidence_color = "green"
-                        elif confidence >= 0.6:
-                            confidence_color = "orange"
-                        else:
-                            confidence_color = "red"
-
-                        st.markdown(f"<span style='color:{confidence_color};font-size:0.8em;'>Confidence: {confidence_pct}%</span>", unsafe_allow_html=True)
+                    self.display_confidence_score(message)
 
                     # Add feedback buttons directly here - always show for each message
-                    st.write("") # Add a small space
+                    st.write("")  # Add a small space
 
                     # Check if feedback already submitted for this message
                     if feedback_key in st.session_state.feedback_submitted:
@@ -531,7 +432,7 @@ class LegalMindUI:
                                     )
                                     # Store feedback and force rerun
                                     st.session_state.feedback_submitted[feedback_key] = "liked"
-                                    st.experimental_rerun()
+                                    st.rerun()
 
                         with feedback_cols[1]:
                             if st.button("👎", key=f"dislike_{i}"):
@@ -543,7 +444,7 @@ class LegalMindUI:
                                     )
                                     # Store feedback and force rerun
                                     st.session_state.feedback_submitted[feedback_key] = "disliked"
-                                    st.experimental_rerun()
+                                    st.rerun()
 
     def _handle_feedback(self, query, response, is_positive):
         """
@@ -557,10 +458,10 @@ class LegalMindUI:
         if not self.pipeline_available or not self.response_pipeline:
             return
 
-        # Use enhanced RLHF if available
-        if hasattr(self.response_pipeline, "rlhf") and hasattr(self.response_pipeline.rlhf, "collect_like_dislike_feedback"):
+        # Use RLHF if available
+        if hasattr(self.response_pipeline, "rlhf") and self.response_pipeline.rlhf is not None:
             try:
-                # Use the enhanced feedback collection
+                # Use the feedback collection
                 self.response_pipeline.rlhf.collect_like_dislike_feedback(
                     query=query,
                     response=response,
@@ -569,32 +470,7 @@ class LegalMindUI:
                 logger.info(f"Collected {'positive' if is_positive else 'negative'} feedback for response")
                 return
             except Exception as e:
-                logger.error(f"Error collecting enhanced feedback: {str(e)}")
-                # Fall back to basic method
-
-        # Fallback to basic feedback collection
-        feedback_text = "Positive user feedback" if is_positive else "Negative user feedback"
-
-        if is_positive:
-            # For positive feedback, the current response is chosen
-            rejected = "This is a basic response without detail or citations."
-            self.response_pipeline.collect_feedback(
-                query,
-                [response, rejected],
-                chosen_idx=0,
-                feedback_text=feedback_text
-            )
-        else:
-            # For negative feedback, a better option is chosen
-            chosen = "I apologize, but I need more specific information to provide an accurate response about Australian law. Could you please provide more details about your legal question?"
-            self.response_pipeline.collect_feedback(
-                query,
-                [chosen, response],
-                chosen_idx=0,
-                feedback_text=feedback_text
-            )
-
-        logger.info(f"Collected {'positive' if is_positive else 'negative'} feedback using basic method")
+                logger.error(f"Error collecting feedback: {str(e)}")
 
     def _display_retrieved_docs(self, documents: List[Dict[str, Any]]):
         """Display the retrieved documents."""
@@ -603,11 +479,12 @@ class LegalMindUI:
 
         with st.expander("View Retrieved Legal Documents", expanded=False):
             for i, doc in enumerate(documents):
-                st.markdown(f"### Document {i+1}")
+                st.markdown(f"### Document {i + 1}")
                 st.markdown(self._format_document_preview(doc))
                 st.markdown("---")
 
-    def _display_response_analysis(self, analysis):
+    @staticmethod
+    def _display_response_analysis(analysis):
         """Display the response analysis if available."""
         if not analysis or not st.session_state.show_confidence:
             return
@@ -630,10 +507,11 @@ class LegalMindUI:
                         confidence = result.get("context_confidence", 0)
 
                         status = "✅ Verified" if verified else "❌ Not Verified"
-                        st.markdown(f"**Citation {i+1}**: {citation}  \n{status} (Confidence: {int(confidence*100)}%)")
+                        st.markdown(
+                            f"**Citation {i + 1}**: {citation}  \n{status} (Confidence: {int(confidence * 100)}%)")
 
                 verification_rate = citation_analysis.get("verification_rate", 1.0)
-                st.markdown(f"**Citation Verification Rate**: {int(verification_rate*100)}%")
+                st.markdown(f"**Citation Verification Rate**: {int(verification_rate * 100)}%")
 
             # Hallucination analysis
             hallucination_analysis = analysis.get("hallucination_analysis", {})
@@ -650,9 +528,11 @@ class LegalMindUI:
                 jurisdiction_analysis = hallucination_analysis.get("jurisdiction_analysis", {})
                 if not jurisdiction_analysis.get("jurisdiction_match", True):
                     mismatched = jurisdiction_analysis.get("mismatched_jurisdictions", [])
-                    st.markdown(f"⚠️ **Jurisdiction Mismatch**: Response discusses jurisdictions not supported by context: {', '.join(mismatched)}")
+                    st.markdown(
+                        f"⚠️ **Jurisdiction Mismatch**: Response discusses jurisdictions not supported by context: {', '.join(mismatched)}")
 
-    def _display_rag_explanation(self, explanation):
+    @staticmethod
+    def _display_rag_explanation(explanation):
         """Display the RAG strategy explanation if available."""
         if not explanation:
             return
@@ -668,7 +548,7 @@ class LegalMindUI:
                 if expanded_queries:
                     st.markdown("**Expanded Queries:**")
                     for i, query in enumerate(expanded_queries):
-                        st.markdown(f"{i+1}. {query}")
+                        st.markdown(f"{i + 1}. {query}")
 
                 legal_terms = explanation["query_expansion"].get("legal_terms", [])
                 if legal_terms:
@@ -681,7 +561,7 @@ class LegalMindUI:
                 if perspectives:
                     st.markdown("**Query Perspectives:**")
                     for i, perspective in enumerate(perspectives):
-                        st.markdown(f"{i+1}. {perspective}")
+                        st.markdown(f"{i + 1}. {perspective}")
 
             elif "metadata_enhanced" in explanation:
                 st.markdown("### Metadata Enhancement")
@@ -738,7 +618,7 @@ class LegalMindUI:
                 rag_explanation = None
             elif rag_strategy == "query_expansion":
                 # Expand the query
-                expanded_queries = self.query_expansion.expand_query(query)
+                expanded_queries = self.query_expander.expand_query(query)
                 expanded_query = expanded_queries[0] if expanded_queries else query
 
                 # Use basic RAG with expanded query
@@ -750,7 +630,7 @@ class LegalMindUI:
                     "query_expansion": {
                         "original_query": query,
                         "expanded_queries": expanded_queries,
-                        "legal_terms": self.query_expansion.identify_legal_terms(query)
+                        "legal_terms": self.query_expander.identify_legal_terms(query)
                     }
                 }
             elif rag_strategy == "multi_query":
@@ -770,7 +650,7 @@ class LegalMindUI:
                 rag_explanation = {
                     "best_strategy": "metadata_enhanced",
                     "metadata_enhanced": {
-                        "jurisdiction": self.query_expansion.identify_jurisdiction(query)
+                        "jurisdiction": self.query_expander.identify_jurisdiction(query)
                     }
                 }
             else:  # advanced (auto-select)
@@ -820,8 +700,8 @@ class LegalMindUI:
                 thinking_placeholder.markdown("Analyzing response for accuracy...")
 
                 try:
-                    # Try to use enhanced RLHF to improve response if available
-                    if hasattr(self.response_pipeline, "rlhf") and hasattr(self.response_pipeline.rlhf, "create_better_response"):
+                    # Try to use RLHF to improve response if available
+                    if hasattr(self.response_pipeline, "rlhf") and self.response_pipeline.rlhf is not None:
                         try:
                             # Use RLHF to potentially improve the response
                             thinking_placeholder.markdown("Using RLHF feedback to enhance response...")
@@ -898,11 +778,13 @@ class LegalMindUI:
             self._display_response_analysis(response_analysis)
 
         # Check if RLHF training is pending and show a notification
-        if st.session_state.rlhf_training_pending and self.pipeline_available and hasattr(self.response_pipeline, "rlhf"):
+        if st.session_state.rlhf_training_pending and self.pipeline_available and hasattr(self.response_pipeline,
+                                                                                          "rlhf"):
             try:
                 rlhf_status = self.response_pipeline.rlhf.get_status()
                 if rlhf_status["pending_training"]:
-                    st.info("📊 Enough feedback has been collected to train the RLHF model. Use the 'Train RLHF Model' button in the sidebar to improve response quality.")
+                    st.info(
+                        "📊 Enough feedback has been collected to train the RLHF model. Use the 'Train RLHF Model' button in the sidebar to improve response quality.")
             except:
                 pass
 

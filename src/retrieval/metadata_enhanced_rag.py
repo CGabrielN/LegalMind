@@ -6,68 +6,67 @@ court hierarchy weighting, recency analysis, and citation network mapping to
 improve retrieval quality for legal documents.
 """
 
-import re
-import yaml
 import logging
+import re
 from datetime import datetime
-from typing import List, Dict, Any, Tuple, Optional, Set
-
-from ..vectordb.chroma_db import ChromaVectorStore
-from ..embeddings.embedding import EmbeddingModel
-from .query_expansion import LegalQueryExpansion
+from typing import List, Dict, Any, Tuple, Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class MetadataEnhancedRAG:
     """
     Implements metadata-enhanced retrieval for legal documents.
     """
 
-    def __init__(self):
+    def __init__(self, resource_manager=None):
         """Initialize the metadata-enhanced retrieval system."""
-        self.vector_store = ChromaVectorStore()
-        self.embedding_model = EmbeddingModel()
-        self.query_expander = LegalQueryExpansion()
-        self.top_k = config["rag"]["metadata_enhanced"]["top_k"]
+        if resource_manager is None:
+            from src.core.resource_manager import ResourceManager
+            resource_manager = ResourceManager()
+        self.resource_manager = resource_manager
+        self.config = resource_manager.config
+
+        self.vector_store = resource_manager.vector_store
+        self.embedding_model = resource_manager.embedding_model
+        self.query_expander = resource_manager.query_expander
+        self.top_k = self.config["rag"]["metadata_enhanced"]["top_k"]
 
         # Australian court hierarchy (higher number = higher court)
         self.court_hierarchy = {
-            "HCA": 10,    # High Court of Australia
-            "FCAFC": 9,   # Federal Court of Australia (Full Court)
-            "FCA": 8,     # Federal Court of Australia
-            "NSWCA": 7,   # NSW Court of Appeal
-            "VSCA": 7,    # Victorian Court of Appeal
-            "QCA": 7,     # Queensland Court of Appeal
-            "WASCA": 7,   # WA Court of Appeal
-            "NSWSC": 6,   # NSW Supreme Court
-            "VSC": 6,     # Victorian Supreme Court
-            "QSC": 6,     # Queensland Supreme Court
-            "WASC": 6,    # WA Supreme Court
-            "SASC": 6,    # SA Supreme Court
-            "TASSC": 6,   # Tasmanian Supreme Court
-            "NTSC": 6,    # NT Supreme Court
-            "ACTSC": 6,   # ACT Supreme Court
-            "NSWDC": 5,   # NSW District Court
-            "VCC": 5,     # Victorian County Court
-            "QDC": 5,     # Queensland District Court
-            "WADC": 5,    # WA District Court
-            "SADC": 5,    # SA District Court
-            "NSWLC": 4,   # NSW Local Court
-            "VMC": 4,     # Victorian Magistrates Court
-            "QMC": 4,     # Queensland Magistrates Court
-            "FCCA": 7,    # Federal Circuit Court of Australia
-            "FMC": 7      # Federal Magistrates Court (older name for FCCA)
+            "HCA": 10,  # High Court of Australia
+            "FCAFC": 9,  # Federal Court of Australia (Full Court)
+            "FCA": 8,  # Federal Court of Australia
+            "NSWCA": 7,  # NSW Court of Appeal
+            "VSCA": 7,  # Victorian Court of Appeal
+            "QCA": 7,  # Queensland Court of Appeal
+            "WASCA": 7,  # WA Court of Appeal
+            "NSWSC": 6,  # NSW Supreme Court
+            "VSC": 6,  # Victorian Supreme Court
+            "QSC": 6,  # Queensland Supreme Court
+            "WASC": 6,  # WA Supreme Court
+            "SASC": 6,  # SA Supreme Court
+            "TASSC": 6,  # Tasmanian Supreme Court
+            "NTSC": 6,  # NT Supreme Court
+            "ACTSC": 6,  # ACT Supreme Court
+            "NSWDC": 5,  # NSW District Court
+            "VCC": 5,  # Victorian County Court
+            "QDC": 5,  # Queensland District Court
+            "WADC": 5,  # WA District Court
+            "SADC": 5,  # SA District Court
+            "NSWLC": 4,  # NSW Local Court
+            "VMC": 4,  # Victorian Magistrates Court
+            "QMC": 4,  # Queensland Magistrates Court
+            "FCCA": 7,  # Federal Circuit Court of Australia
+            "FMC": 7  # Federal Magistrates Court (older name for FCCA)
         }
 
         logger.info("Initialized Metadata-Enhanced RAG system")
 
-    def _extract_court_from_citation(self, citation: str) -> Optional[str]:
+    @staticmethod
+    def _extract_court_from_citation(citation: str) -> Optional[str]:
         """
         Extract court identifier from a legal citation.
 
@@ -77,16 +76,23 @@ class MetadataEnhancedRAG:
         Returns:
             Court identifier or None
         """
-        # Pattern for Australian citations
-        pattern = r"\[\d{4}\]\s+([A-Z]+)\s+\d+"
-        match = re.search(pattern, citation)
+        try:
+            # Clean the citation string
+            citation = citation.strip()
 
-        if match:
-            return match.group(1)
+            # Pattern for Australian citations
+            pattern = r"\[\d{4}\]\s+([A-Z]+)\s+\d+"
+            match = re.search(pattern, citation)
+
+            if match:
+                return match.group(1)
+        except Exception as e:
+            logger.warning(f"Error extracting court from citation: {str(e)}")
 
         return None
 
-    def _extract_year_from_citation(self, citation: str) -> Optional[int]:
+    @staticmethod
+    def _extract_year_from_citation(citation: str) -> Optional[int]:
         """
         Extract year from a legal citation.
 
@@ -96,19 +102,26 @@ class MetadataEnhancedRAG:
         Returns:
             Year as integer or None
         """
-        # Pattern for year in Australian citations
-        pattern = r"\[(\d{4})\]"
-        match = re.search(pattern, citation)
+        try:
+            # Clean the citation string
+            citation = citation.strip()
 
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
-                return None
+            # Pattern for year in Australian citations
+            pattern = r"\[(\d{4})\]"
+            match = re.search(pattern, citation)
+
+            if match:
+                try:
+                    return int(match.group(1))
+                except ValueError:
+                    return None
+        except Exception as e:
+            logger.warning(f"Error extracting year from citation: {str(e)}")
 
         return None
 
-    def _calculate_recency_score(self, year: Optional[int]) -> float:
+    @staticmethod
+    def _calculate_recency_score(year: Optional[int]) -> float:
         """
         Calculate recency score based on document year.
 
@@ -168,9 +181,6 @@ class MetadataEnhancedRAG:
         # Identify jurisdiction
         jurisdiction = self.query_expander.identify_jurisdiction(query)
 
-        # Basic similarity search
-        query_embedding = self.embedding_model.embed_text(query)
-
         # Set up filters
         filters = {}
         if jurisdiction:
@@ -207,8 +217,8 @@ class MetadataEnhancedRAG:
             # Weights can be adjusted based on importance of each factor
             combined_score = (
                     0.6 * similarity_score +  # Semantic similarity is most important
-                    0.2 * court_score +       # Court hierarchy
-                    0.2 * recency_score       # Recency
+                    0.2 * court_score +  # Court hierarchy
+                    0.2 * recency_score  # Recency
             )
 
             document = {
@@ -231,10 +241,15 @@ class MetadataEnhancedRAG:
         # Take top_k
         top_documents = documents[:self.top_k]
 
+        # Use the citation network to rerank documents
+        if len(top_documents) > 1:
+            top_documents = self.rerank_with_citation_network(top_documents)
+
         logger.info(f"Retrieved {len(top_documents)} documents with metadata enhancement")
         return top_documents
 
-    def prepare_context(self, documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
+    @staticmethod
+    def prepare_context(documents: List[Dict[str, Any]], max_tokens: int = 3800) -> str:
         """
         Prepare retrieved documents as context for the LLM.
 
@@ -260,7 +275,7 @@ class MetadataEnhancedRAG:
                 break
 
             # Format document with metadata
-            doc_context = f"Document {i+1}:\n"
+            doc_context = f"Document {i + 1}:\n"
 
             # Add any citation information
             if "citation" in doc["metadata"]:
@@ -316,7 +331,8 @@ class MetadataEnhancedRAG:
 
         return context, documents
 
-    def build_citation_network(self, documents: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    @staticmethod
+    def build_citation_network(documents: List[Dict[str, Any]]) -> Dict[str, List[str]]:
         """
         Build a citation network based on retrieved documents.
 
@@ -400,7 +416,7 @@ class MetadataEnhancedRAG:
             doc["citation_score"] = citation_score
             doc["combined_score"] = (
                     0.7 * doc["combined_score"] +  # Original combined score
-                    0.3 * citation_score           # Citation network score
+                    0.3 * citation_score  # Citation network score
             )
 
         # Rerank documents

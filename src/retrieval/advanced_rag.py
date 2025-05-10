@@ -5,47 +5,35 @@ This module integrates all advanced RAG strategies (query expansion, multi-query
 and metadata-enhanced retrieval) into a unified retrieval system.
 """
 
-import yaml
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-
-from .basic_rag import BasicRAG
-from .query_expansion import LegalQueryExpansion
-from .multi_query_rag import MultiQueryRAG
-from .metadata_enhanced_rag import MetadataEnhancedRAG
+from typing import List, Dict, Any, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class AdvancedRAG:
     """
     Integrates multiple RAG strategies for comprehensive legal retrieval.
     """
 
-    def __init__(self):
+    def __init__(self, resource_manager = None):
         """Initialize the advanced RAG system."""
+        if resource_manager is None:
+            from src.core.resource_manager import ResourceManager
+            resource_manager = ResourceManager()
+        self.resource_manager = resource_manager
+        self.config = self.resource_manager.config
+
         # Initialize component RAG strategies
-        self.basic_rag = BasicRAG()
-        self.query_expansion = LegalQueryExpansion()
-        self.multi_query_rag = MultiQueryRAG()
-        self.metadata_enhanced_rag = MetadataEnhancedRAG()
+        self.basic_rag = self.resource_manager.basic_rag
+        self.query_expansion = self.resource_manager.query_expander
+        self.multi_query_rag = self.resource_manager.multi_query_rag
+        self.metadata_enhanced_rag = self.resource_manager.metadata_enhanced_rag
 
-        # Configure which strategies are enabled
-        self.use_query_expansion = config["rag"]["query_expansion"]["enabled"]
-        self.use_multi_query = config["rag"]["multi_query"]["enabled"]
-        self.use_metadata_enhanced = config["rag"]["metadata_enhanced"]["enabled"]
-
-        self.top_k = config["rag"]["advanced"]["top_k"]
-
+        self.top_k = self.config["rag"]["advanced"]["top_k"]
         logger.info("Initialized Advanced RAG system")
-        logger.info(f"Query Expansion enabled: {self.use_query_expansion}")
-        logger.info(f"Multi-Query enabled: {self.use_multi_query}")
-        logger.info(f"Metadata-Enhanced enabled: {self.use_metadata_enhanced}")
 
     def determine_best_strategy(self, query: str) -> str:
         """
@@ -61,20 +49,20 @@ class AdvancedRAG:
 
         # Check for jurisdiction-specific queries
         jurisdiction = self.query_expansion.identify_jurisdiction(query)
-        if jurisdiction and self.use_metadata_enhanced:
+        if jurisdiction:
             logger.info(f"Selected metadata-enhanced strategy due to jurisdiction: {jurisdiction}")
             return "metadata_enhanced"
 
         # Check for multi-perspective queries
         perspective_indicators = ["plaintiff", "defendant", "prosecution", "defense",
                                   "compare", "contrast", "different", "perspectives"]
-        if any(indicator in query_lower for indicator in perspective_indicators) and self.use_multi_query:
+        if any(indicator in query_lower for indicator in perspective_indicators):
             logger.info("Selected multi-query strategy due to perspective indicators")
             return "multi_query"
 
         # Check for specialized legal terminology
         legal_terms = self.query_expansion.identify_legal_terms(query)
-        if len(legal_terms) >= 2 and self.use_query_expansion:
+        if len(legal_terms) >= 2:
             logger.info(f"Selected query expansion strategy due to legal terms: {legal_terms}")
             return "query_expansion"
 
@@ -96,13 +84,13 @@ class AdvancedRAG:
         strategy = self.determine_best_strategy(query)
 
         # Retrieve using appropriate strategy
-        if strategy == "metadata_enhanced" and self.use_metadata_enhanced:
+        if strategy == "metadata_enhanced":
             logger.info("Using Metadata-Enhanced retrieval")
             documents = self.metadata_enhanced_rag.retrieve(query)
-        elif strategy == "multi_query" and self.use_multi_query:
+        elif strategy == "multi_query":
             logger.info("Using Multi-Query retrieval")
             documents = self.multi_query_rag.retrieve(query)
-        elif strategy == "query_expansion" and self.use_query_expansion:
+        elif strategy == "query_expansion":
             logger.info("Using Query Expansion retrieval")
 
             # Expand the query
@@ -122,7 +110,7 @@ class AdvancedRAG:
 
     def retrieve_with_all_strategies(self, query: str) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Retrieve documents using all enabled strategies for comparison.
+        Retrieve documents using all strategies for comparison.
 
         Args:
             query: The user's legal query
@@ -137,21 +125,18 @@ class AdvancedRAG:
         results["basic"] = basic_docs
 
         # Query Expansion
-        if self.use_query_expansion:
-            expanded_queries = self.query_expansion.expand_query(query)
-            expanded_query = expanded_queries[0] if expanded_queries else query
-            _, query_exp_docs = self.basic_rag.process_query(expanded_query)
-            results["query_expansion"] = query_exp_docs
+        expanded_queries = self.query_expansion.expand_query(query)
+        expanded_query = expanded_queries[0] if expanded_queries else query
+        _, query_exp_docs = self.basic_rag.process_query(expanded_query)
+        results["query_expansion"] = query_exp_docs
 
         # Multi-Query
-        if self.use_multi_query:
-            multi_query_docs = self.multi_query_rag.retrieve(query)
-            results["multi_query"] = multi_query_docs
+        multi_query_docs = self.multi_query_rag.retrieve(query)
+        results["multi_query"] = multi_query_docs
 
         # Metadata-Enhanced
-        if self.use_metadata_enhanced:
-            metadata_docs = self.metadata_enhanced_rag.retrieve(query)
-            results["metadata_enhanced"] = metadata_docs
+        metadata_docs = self.metadata_enhanced_rag.retrieve(query)
+        results["metadata_enhanced"] = metadata_docs
 
         return results
 
@@ -208,11 +193,6 @@ class AdvancedRAG:
         explanation = {
             "query": query,
             "best_strategy": strategy,
-            "strategies_enabled": {
-                "query_expansion": self.use_query_expansion,
-                "multi_query": self.use_multi_query,
-                "metadata_enhanced": self.use_metadata_enhanced
-            },
             "results_by_strategy": {}
         }
 
@@ -224,18 +204,18 @@ class AdvancedRAG:
             }
 
         # Add strategy-specific details
-        if strategy == "query_expansion" and self.use_query_expansion:
+        if strategy == "query_expansion":
             expanded_queries = self.query_expansion.expand_query(query)
             explanation["query_expansion"] = {
                 "original_query": query,
                 "expanded_queries": expanded_queries,
                 "legal_terms": self.query_expansion.identify_legal_terms(query)
             }
-        elif strategy == "multi_query" and self.use_multi_query:
+        elif strategy == "multi_query":
             explanation["multi_query"] = {
                 "perspectives": self.multi_query_rag.generate_query_perspectives(query)
             }
-        elif strategy == "metadata_enhanced" and self.use_metadata_enhanced:
+        elif strategy == "metadata_enhanced":
             explanation["metadata_enhanced"] = {
                 "jurisdiction": self.query_expansion.identify_jurisdiction(query)
             }

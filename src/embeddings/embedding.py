@@ -4,11 +4,10 @@ LegalMind Embedding Module
 This module handles the embedding of legal texts using the specified model.
 """
 
-import os
-import yaml
-import torch
 import logging
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
+
+import torch
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
@@ -16,19 +15,20 @@ from transformers import AutoModel, AutoTokenizer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 class EmbeddingModel:
     """Handles the embedding of legal texts using the BGE model."""
 
-    def __init__(self):
-        """Initialize the embedding model from config."""
-        self.model_name = config["embedding"]["model_name"]
-        self.device = config["embedding"]["device"]
-        self.batch_size = config["embedding"]["batch_size"]
-        self.max_length = config["embedding"]["max_length"]
+    def __init__(self, config):
+        """Initialize the embedding model from config.
+        Args:
+            config (dict): Configuration object containing the model configuration.
+        """
+        self.config = config
+        self.model_name = self.config["embedding"]["model_name"]
+        self.device = self.config["embedding"]["device"]
+        self.batch_size = self.config["embedding"]["batch_size"]
+        self.max_length = self.config["embedding"]["max_length"]
 
         # Check if CUDA is available when device is set to cuda
         if self.device == "cuda" and not torch.cuda.is_available():
@@ -53,7 +53,8 @@ class EmbeddingModel:
             logger.error(f"Error loading embedding model: {str(e)}")
             raise
 
-    def _mean_pooling(self, model_output, attention_mask):
+    @staticmethod
+    def _mean_pooling(model_output, attention_mask):
         """Perform mean pooling on token embeddings."""
         # First element of model_output contains all token embeddings
         token_embeddings = model_output[0]
@@ -113,32 +114,10 @@ class EmbeddingModel:
 
         # Process in batches
         for i in tqdm(range(0, len(texts), self.batch_size), desc="Embedding texts"):
-            batch_texts = texts[i:i+self.batch_size]
+            batch_texts = texts[i:i + self.batch_size]
 
-            # Tokenize batch
-            encoded_input = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors='pt'
-            )
-
-            # Move tensors to the correct device
-            encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
-
-            # Compute token embeddings
-            with torch.no_grad():
-                model_output = self.model(**encoded_input)
-
-            # Perform mean pooling
-            embeddings = self._mean_pooling(model_output, encoded_input['attention_mask'])
-
-            # Normalize embeddings
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-
-            # Convert to list and add to results
-            batch_embeddings = embeddings.cpu().tolist()
+            # Prepare the batch for the model
+            batch_embeddings = self.embed_text(batch_texts)
             all_embeddings.extend(batch_embeddings)
 
         return all_embeddings

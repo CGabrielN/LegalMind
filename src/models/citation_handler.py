@@ -6,21 +6,15 @@ legal texts, providing extraction, validation, and cross-referencing against
 Australian precedents.
 """
 
-import re
-import yaml
-import json
 import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Set, Tuple
+import re
 from dataclasses import dataclass
+from typing import List, Dict, Any, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load configuration
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 @dataclass
 class Citation:
@@ -36,6 +30,7 @@ class Citation:
     citation_type: str = "case"  # case, statute, article
     valid: bool = True
     confidence: float = 1.0
+
 
 class AustralianCitationExtractor:
     """
@@ -99,35 +94,46 @@ class AustralianCitationExtractor:
         """
         citations = []
 
-        # Find all case citations in text
-        matches = re.finditer(self.case_pattern, text)
+        try:
+            # Clean up the text - remove extra spaces
+            text = ' '.join(text.split())
 
-        for match in matches:
-            case_name = match.group(1)
-            year = match.group(2)
-            court_abbr = match.group(3)
-            number = match.group(4)
+            # Find all case citations in text
+            matches = re.finditer(self.case_pattern, text)
 
-            # Determine jurisdiction from court abbreviation
-            jurisdiction = self.court_jurisdictions.get(court_abbr, "Unknown")
+            for match in matches:
+                try:
+                    case_name = match.group(1).strip()
+                    year = match.group(2)
+                    court_abbr = match.group(3)
+                    number = match.group(4)
 
-            # Create Citation object
-            citation = Citation(
-                full_citation=match.group(0),
-                case_name=case_name,
-                parties=case_name.split(" v "),
-                year=year,
-                court=self.court_jurisdictions.get(court_abbr, court_abbr),
-                court_abbr=court_abbr,
-                number=number,
-                jurisdiction=jurisdiction,
-                citation_type="case"
-            )
+                    # Determine jurisdiction from court abbreviation
+                    jurisdiction = self.court_jurisdictions.get(court_abbr, "Unknown")
 
-            citations.append(citation)
+                    # Create Citation object
+                    citation = Citation(
+                        full_citation=match.group(0).strip(),
+                        case_name=case_name,
+                        parties=case_name.split(" v "),
+                        year=year,
+                        court=self.court_jurisdictions.get(court_abbr, court_abbr),
+                        court_abbr=court_abbr,
+                        number=number,
+                        jurisdiction=jurisdiction,
+                        citation_type="case"
+                    )
 
-        logger.info(f"Extracted {len(citations)} case citations")
-        return citations
+                    citations.append(citation)
+                except Exception as e:
+                    logger.warning(f"Error processing citation match: {str(e)}")
+                    continue
+
+            logger.info(f"Extracted {len(citations)} case citations")
+            return citations
+        except Exception as e:
+            logger.error(f"Error in citation extraction: {str(e)}")
+            return citations
 
     def extract_statute_citations(self, text: str) -> List[Citation]:
         """
@@ -191,244 +197,6 @@ class AustralianCitationExtractor:
 
         return all_citations
 
-class CitationCrossReferencer:
-    """
-    Cross-references citations against a database of Australian precedents.
-    """
-
-    def __init__(self, precedent_db_path: Optional[str] = None):
-        """
-        Initialize with path to precedent database.
-
-        Args:
-            precedent_db_path: Path to JSON file with precedent citations
-        """
-        self.precedents = {}
-
-        # Use default path if not provided
-        if precedent_db_path is None:
-            precedent_db_path = Path("data") / "precedents" / "australian_citations.json"
-
-        # Try to load precedent database
-        try:
-            with open(precedent_db_path, 'r') as f:
-                self.precedents = json.load(f)
-            logger.info(f"Loaded {len(self.precedents)} precedents from {precedent_db_path}")
-        except FileNotFoundError:
-            logger.warning(f"Precedent database not found at {precedent_db_path}")
-            # Create directory for future use
-            Path(precedent_db_path).parent.mkdir(parents=True, exist_ok=True)
-        except json.JSONDecodeError:
-            logger.error(f"Error decoding precedent database at {precedent_db_path}")
-
-        self.citation_extractor = AustralianCitationExtractor()
-
-    def find_precedent(self, citation: Citation) -> Optional[Dict[str, Any]]:
-        """
-        Find a precedent matching the citation.
-
-        Args:
-            citation: Citation to search for
-
-        Returns:
-            Matching precedent or None
-        """
-        # Try exact match on full citation
-        if citation.full_citation in self.precedents:
-            return self.precedents[citation.full_citation]
-
-        # Try match on case name, year, and court
-        if citation.citation_type == "case":
-            key = f"{citation.case_name} [{citation.year}] {citation.court_abbr}"
-            if key in self.precedents:
-                return self.precedents[key]
-
-        # Try match on statute name and jurisdiction
-        if citation.citation_type == "statute":
-            for precedent_key, precedent in self.precedents.items():
-                if precedent.get("citation_type") == "statute" and \
-                        citation.case_name in precedent_key and \
-                        precedent.get("jurisdiction") == citation.jurisdiction:
-                    return precedent
-
-        return None
-
-    def cross_reference_citations(self, citations: List[Citation]) -> List[Dict[str, Any]]:
-        """
-        Cross-reference citations against precedent database.
-
-        Args:
-            citations: List of citations to cross-reference
-
-        Returns:
-            List of cross-reference results
-        """
-        results = []
-
-        for citation in citations:
-            # Find matching precedent
-            precedent = self.find_precedent(citation)
-
-            # Create result
-            result = {
-                "citation": citation.full_citation,
-                "found": precedent is not None,
-                "precedent": precedent,
-                "confidence": 1.0 if precedent else 0.0
-            }
-
-            # If no exact match, try fuzzy matching
-            if not precedent:
-                result["confidence"] = self._calculate_fuzzy_confidence(citation)
-                result["similar_precedents"] = self._find_similar_precedents(citation)
-
-            results.append(result)
-
-        return results
-
-    def _calculate_fuzzy_confidence(self, citation: Citation) -> float:
-        """Calculate confidence for a citation without exact match."""
-        # This is a simplified implementation
-        # In a real system, this would use more sophisticated fuzzy matching
-
-        confidence = 0.0
-
-        # Check if case name or parties are similar to any precedents
-        for precedent_key, precedent in self.precedents.items():
-            if citation.citation_type == precedent.get("citation_type", ""):
-                # Check case name similarity
-                if any(party.lower() in precedent_key.lower() for party in citation.parties):
-                    confidence = max(confidence, 0.4)
-
-                # Check year and court
-                if citation.year in precedent_key and citation.court_abbr in precedent_key:
-                    confidence = max(confidence, 0.7)
-
-        return confidence
-
-    def _find_similar_precedents(self, citation: Citation) -> List[Dict[str, Any]]:
-        """Find similar precedents for a citation."""
-        similar = []
-
-        for precedent_key, precedent in self.precedents.items():
-            # Skip different citation types
-            if citation.citation_type != precedent.get("citation_type", ""):
-                continue
-
-            # Check for similar case name or parties
-            if any(party.lower() in precedent_key.lower() for party in citation.parties):
-                # Check for same court or jurisdiction
-                if citation.court_abbr in precedent_key or \
-                        precedent.get("jurisdiction", "") == citation.jurisdiction:
-                    similar.append(precedent)
-
-            # Check for same year and court
-            elif citation.year in precedent_key and citation.court_abbr in precedent_key:
-                similar.append(precedent)
-
-        # Limit to top 3 similar precedents
-        return similar[:3]
-
-    def add_precedent(self, citation: Citation, metadata: Dict[str, Any] = None):
-        """
-        Add a precedent to the database.
-
-        Args:
-            citation: Citation to add
-            metadata: Additional metadata about the precedent
-        """
-        if metadata is None:
-            metadata = {}
-
-        # Create precedent entry
-        precedent = {
-            "full_citation": citation.full_citation,
-            "case_name": citation.case_name,
-            "year": citation.year,
-            "court": citation.court,
-            "court_abbr": citation.court_abbr,
-            "number": citation.number,
-            "jurisdiction": citation.jurisdiction,
-            "citation_type": citation.citation_type
-        }
-
-        # Add additional metadata
-        precedent.update(metadata)
-
-        # Add to precedents dictionary
-        self.precedents[citation.full_citation] = precedent
-
-        logger.info(f"Added precedent: {citation.full_citation}")
-
-    def save_precedents(self, output_path: Optional[str] = None):
-        """
-        Save precedent database to file.
-
-        Args:
-            output_path: Path to save JSON file
-        """
-        if output_path is None:
-            output_path = Path("data") / "precedents" / "australian_citations.json"
-
-        # Create directory if it doesn't exist
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-        # Save to JSON file
-        with open(output_path, 'w') as f:
-            json.dump(self.precedents, f, indent=2)
-
-        logger.info(f"Saved {len(self.precedents)} precedents to {output_path}")
-
-    def extract_and_cross_reference(self, text: str) -> Dict[str, Any]:
-        """
-        Extract citations from text and cross-reference against precedents.
-
-        Args:
-            text: Text to analyze
-
-        Returns:
-            Dictionary with extraction and cross-reference results
-        """
-        # Extract all citations
-        citations = self.citation_extractor.extract_all_citations(text)
-
-        # Cross-reference against precedents
-        cross_references = self.cross_reference_citations(citations)
-
-        # Calculate overall confidence
-        if cross_references:
-            avg_confidence = sum(ref["confidence"] for ref in cross_references) / len(cross_references)
-        else:
-            avg_confidence = 1.0
-
-        results = {
-            "citations": [c.full_citation for c in citations],
-            "citation_objects": citations,
-            "cross_references": cross_references,
-            "confidence": avg_confidence
-        }
-
-        return results
-
-    def update_precedents_from_text(self, text: str, metadata: Dict[str, Any] = None):
-        """
-        Extract citations from text and add them to precedent database.
-
-        Args:
-            text: Text to analyze
-            metadata: Additional metadata to add to precedents
-        """
-        if metadata is None:
-            metadata = {}
-
-        # Extract all citations
-        citations = self.citation_extractor.extract_all_citations(text)
-
-        # Add each citation as a precedent
-        for citation in citations:
-            self.add_precedent(citation, metadata)
-
-        logger.info(f"Added {len(citations)} precedents from text")
 
 class CitationFormatting:
     """
@@ -491,12 +259,14 @@ class CitationFormatting:
                 for c in citations:
                     if c.full_citation == citation:
                         formatted_citation = self.format_citation(c)
-                        formatted_text = formatted_text[:pos] + formatted_citation + formatted_text[pos+len(citation):]
+                        formatted_text = formatted_text[:pos] + formatted_citation + formatted_text[
+                                                                                     pos + len(citation):]
                         break
 
         return formatted_text
 
-    def get_jurisdiction_abbreviations(self) -> Dict[str, str]:
+    @staticmethod
+    def get_jurisdiction_abbreviations() -> Dict[str, str]:
         """Get mapping of jurisdiction abbreviations to full names."""
         return {
             "Cth": "Commonwealth",
@@ -537,7 +307,7 @@ class CitationFormatting:
                     if c.full_citation == citation:
                         link_url = self._generate_citation_link(c)
                         linked_citation = f'<a href="{link_url}" title="{c.full_citation}" class="legal-citation">{c.full_citation}</a>'
-                        linked_text = linked_text[:pos] + linked_citation + linked_text[pos+len(citation):]
+                        linked_text = linked_text[:pos] + linked_citation + linked_text[pos + len(citation):]
                         break
 
         return linked_text
@@ -561,7 +331,8 @@ class CitationFormatting:
         # Default: austlii search
         return f"https://www.austlii.edu.au/cgi-bin/sinosrch.cgi?query={citation.full_citation.replace(' ', '+')}"
 
-    def _get_austlii_jurisdiction_path(self, jurisdiction: str) -> str:
+    @staticmethod
+    def _get_austlii_jurisdiction_path(jurisdiction: str) -> str:
         """Convert jurisdiction to AustLII path component."""
         mapping = {
             "Commonwealth": "cth",
@@ -577,6 +348,7 @@ class CitationFormatting:
 
         return mapping.get(jurisdiction, "cth").lower()
 
+
 class CitationVerification:
     """
     Verifies Australian legal citations against authoritative sources.
@@ -585,7 +357,6 @@ class CitationVerification:
     def __init__(self):
         """Initialize citation verifier."""
         self.extractor = AustralianCitationExtractor()
-        self.cross_referencer = CitationCrossReferencer()
         logger.info("Initialized citation verifier")
 
     def verify_citation_in_context(self, citation: str, context: str) -> Tuple[bool, float]:
@@ -661,15 +432,10 @@ class CitationVerification:
         for citation in citations:
             verified, confidence = self.verify_citation_in_context(citation.full_citation, context)
 
-            # Cross-reference against precedent database
-            cross_ref = self.cross_referencer.find_precedent(citation)
-
             result = {
                 "citation": citation.full_citation,
                 "verified_in_context": verified,
-                "context_confidence": confidence,
-                "found_in_precedents": cross_ref is not None,
-                "precedent": cross_ref
+                "context_confidence": confidence
             }
 
             verification_results.append(result)
@@ -744,7 +510,8 @@ class CitationVerification:
 
         return suggestions
 
-    def _extract_legal_topics(self, text: str) -> List[str]:
+    @staticmethod
+    def _extract_legal_topics(text: str) -> List[str]:
         """Extract legal topics from text."""
         # This is a simplified implementation
         # In a real system, this would use more sophisticated NLP
@@ -768,7 +535,8 @@ class CitationVerification:
 
         return found_topics
 
-    def _extract_context_around_citation(self, citation: str, context: str, window: int = 200) -> str:
+    @staticmethod
+    def _extract_context_around_citation(citation: str, context: str, window: int = 200) -> str:
         """Extract text around a citation."""
         position = context.find(citation)
         if position == -1:
@@ -778,94 +546,3 @@ class CitationVerification:
         end = min(len(context), position + len(citation) + window)
 
         return context[start:end]
-
-def initialize_australian_precedents():
-    """
-    Initialize a basic database of important Australian precedents.
-
-    Returns:
-        Dictionary of precedents
-    """
-    # This is a minimal seed database
-    # In a full implementation, this would be much more comprehensive
-    precedents = {}
-
-    # High Court of Australia cases
-    precedents["Mabo v Queensland (No 2) [1992] HCA 23"] = {
-        "full_citation": "Mabo v Queensland (No 2) [1992] HCA 23",
-        "case_name": "Mabo v Queensland (No 2)",
-        "parties": ["Mabo", "Queensland"],
-        "year": "1992",
-        "court": "High Court of Australia",
-        "court_abbr": "HCA",
-        "number": "23",
-        "jurisdiction": "High Court of Australia",
-        "citation_type": "case",
-        "importance": "landmark",
-        "topic": "native title"
-    }
-
-    precedents["Donoghue v Stevenson [1932] AC 562"] = {
-        "full_citation": "Donoghue v Stevenson [1932] AC 562",
-        "case_name": "Donoghue v Stevenson",
-        "parties": ["Donoghue", "Stevenson"],
-        "year": "1932",
-        "court": "House of Lords",
-        "court_abbr": "AC",
-        "number": "562",
-        "jurisdiction": "United Kingdom",
-        "citation_type": "case",
-        "importance": "landmark",
-        "topic": "negligence",
-        "note": "Foundation of modern negligence law, adopted in Australia"
-    }
-
-    precedents["Plaintiff S157/2002 v Commonwealth [2003] HCA 2"] = {
-        "full_citation": "Plaintiff S157/2002 v Commonwealth [2003] HCA 2",
-        "case_name": "Plaintiff S157/2002 v Commonwealth",
-        "parties": ["Plaintiff S157/2002", "Commonwealth"],
-        "year": "2003",
-        "court": "High Court of Australia",
-        "court_abbr": "HCA",
-        "number": "2",
-        "jurisdiction": "High Court of Australia",
-        "citation_type": "case",
-        "importance": "significant",
-        "topic": "constitutional law"
-    }
-
-    # NSW cases
-    precedents["Nasr v NRMA Insurance [2006] NSWSC 1918"] = {
-        "full_citation": "Nasr v NRMA Insurance [2006] NSWSC 1918",
-        "case_name": "Nasr v NRMA Insurance",
-        "parties": ["Nasr", "NRMA Insurance"],
-        "year": "2006",
-        "court": "New South Wales Supreme Court",
-        "court_abbr": "NSWSC",
-        "number": "1918",
-        "jurisdiction": "New South Wales",
-        "citation_type": "case",
-        "topic": "insurance"
-    }
-
-    # Statutes
-    precedents["Criminal Code Act 1995 (Cth)"] = {
-        "full_citation": "Criminal Code Act 1995 (Cth)",
-        "case_name": "Criminal Code Act 1995",
-        "year": "1995",
-        "jurisdiction": "Commonwealth",
-        "citation_type": "statute",
-        "topic": "criminal law"
-    }
-
-    precedents["Evidence Act 1995 (NSW)"] = {
-        "full_citation": "Evidence Act 1995 (NSW)",
-        "case_name": "Evidence Act 1995",
-        "year": "1995",
-        "jurisdiction": "New South Wales",
-        "citation_type": "statute",
-        "topic": "evidence"
-    }
-
-    logger.info(f"Initialized {len(precedents)} Australian precedents")
-    return precedents
