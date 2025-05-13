@@ -129,29 +129,53 @@ class CustomLegalEvaluator:
         # Define shorter evaluation prompts
         prompts = {
             "hallucination": f"""
-                As a legal expert, evaluate this response for hallucinations:
+                As a legal expert, evaluate this response for hallucinations (information not supported by the context):
                 QUERY: {query}
                 CONTEXT (EXCERPT): {truncated_context}
                 RESPONSE: {truncated_response}
-                Score hallucinations from 0.0 (none) to 1.0 (severe).
-                SCORE: 
+                
+                On a scale from 0.0 (no hallucinations) to 1.0 (severe hallucinations), provide your score.
+                
+                YOU MUST FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+                SCORE: [number between 0.0-1.0]
+                EXPLANATION: [brief justification]
+                
+                For example:
+                SCORE: 0.7
+                EXPLANATION: The response claims X which isn't supported by the context.
             """,
 
             "relevancy": f"""
-                Legal expert: How relevant is this response to the query?
+                As a legal expert, evaluate how relevant this response is to the query:
                 QUERY: {query}
                 RESPONSE: {truncated_response}
-                Score relevancy from 0.0 (irrelevant) to 1.0 (perfectly relevant).
-                SCORE: 
+                
+                On a scale from 0.0 (completely irrelevant) to 1.0 (perfectly relevant), provide your score.
+                
+                YOU MUST FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+                SCORE: [number between 0.0-1.0]
+                EXPLANATION: [brief justification]
+                
+                For example:
+                SCORE: 0.8
+                EXPLANATION: The response directly addresses the legal question about negligence.
             """,
 
             "factual_consistency": f"""
-                Legal expert: Is this response factually consistent with the context?
+                As a legal expert, evaluate if this response is factually consistent with the provided context:
                 QUERY: {query}
                 CONTEXT (EXCERPT): {truncated_context}
                 RESPONSE: {truncated_response}
-                Score factual consistency from 0.0 (inconsistent) to 1.0 (perfectly consistent).
-                SCORE: 
+                
+                On a scale from 0.0 (completely inconsistent) to 1.0 (perfectly consistent), provide your score.
+                
+                YOU MUST FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+                SCORE: [number between 0.0-1.0]
+                EXPLANATION: [brief justification]
+                
+                For example:
+                SCORE: 0.9
+                EXPLANATION: The response accurately reflects the legal principles mentioned in the context.
             """,
         }
 
@@ -165,11 +189,9 @@ class CustomLegalEvaluator:
         payload = {
             "model": "mistral-7b-instruct-v0.2",
             "messages": [
-                {"role": "system", "content": "You are a strict legal expert evaluating AI responses."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,
-            "max_tokens": 128,  # Reduce token count significantly
             "stream": False
         }
 
@@ -178,7 +200,6 @@ class CustomLegalEvaluator:
                 f"{self.lm_studio_url}/chat/completions",
                 headers=headers,
                 data=json.dumps(payload),
-                timeout=30
             )
             response.raise_for_status()
 
@@ -186,11 +207,18 @@ class CustomLegalEvaluator:
             result = response.json()
             evaluation_text = result["choices"][0]["message"]["content"]
 
-            # Extract score with regex
-            score_match = re.search(r"SCORE:\s*(\d+\.\d+)", evaluation_text)
+            # More flexible pattern that finds any number
+            score_match = re.search(r"(\d+\.\d+)", evaluation_text)
+            # Try multiple patterns if needed
+            if not score_match:
+                score_match = re.search(r"score.*?(\d+\.\d+)", evaluation_text, re.IGNORECASE)
+            if not score_match:
+                score_match = re.search(r"(\d+\.\d+).*?out of", evaluation_text, re.IGNORECASE)
+
             if score_match:
                 score = float(score_match.group(1))
             else:
+                logger.warning(f"Could not extract score from: {evaluation_text}")
                 score = 0.5  # Default score if parsing fails
 
             return {
