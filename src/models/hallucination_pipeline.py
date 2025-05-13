@@ -199,12 +199,4 @@ class LegalResponsePipeline:
             if hasattr(self.rlhf, "initialize_with_synthetic_preferences"):
                 self.rlhf.initialize_with_synthetic_preferences()
 
-        # Initialize citation crosschecker with basic Australian precedents
-        # from .citation_handler import initialize_australian_precedents
-        # precedents = initialize_australian_precedents()
-
-        precedent_db_path = self.config["citation"]["precedent_db_path"]
-        # self.citation_crosschecker.precedents = precedents
-        self.citation_crosschecker.save_precedents(precedent_db_path)
-
         logger.info("Pipeline initialization complete")

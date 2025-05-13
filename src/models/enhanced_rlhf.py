@@ -160,18 +160,18 @@ class EnhancedLegalRewardModel:
             # Create a prompt instructing the model to improve the response
             improvement_prompt = f"""
                 You provided this response to a legal query, but it could be improved:
-                
+
                 QUERY: {query}
-                
+
                 YOUR RESPONSE:
                 {initial_response}
-                
+
                 Please provide an improved response that:
                 1. Includes more accurate legal citations
                 2. Is more precise in legal terminology
                 3. Clearly distinguishes between jurisdictions
                 4. Avoids definitive statements without support
-                
+
                 IMPROVED RESPONSE:
                 """
 
